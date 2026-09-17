@@ -23,6 +23,7 @@ private extension DirectFaceSkin {
         switch self {
         case .nightblood: "NightBlood"
         case .marshmallow: "Marshmallow"
+        case .kitt: "Kitt"
         }
     }
 }

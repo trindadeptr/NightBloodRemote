@@ -13,8 +13,16 @@ final class DirectVoiceReadyCuePlayer: NSObject, AVAudioPlayerDelegate {
     static func cueData(character: DirectFaceSkin, sound: DirectReadySound) -> Data {
         let rate = 16_000
         let count = 3_840
-        let frequencies: [Double] = sound == .tone ? [440, 660]
-            : character == .nightblood ? [196, 293.66] : [523.25, 659.25]
+        let frequencies: [Double]
+        if sound == .tone {
+            frequencies = [440, 660]
+        } else {
+            switch character {
+            case .nightblood: frequencies = [196, 293.66]
+            case .marshmallow: frequencies = [523.25, 659.25]
+            case .kitt: frequencies = [261.63, 392.00]
+            }
+        }
         var data = Data()
         func ascii(_ text: String) { data.append(contentsOf: text.utf8) }
         func u16(_ value: UInt16) {

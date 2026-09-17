@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { FaceCanvas, type FaceCanvasProps } from "./FaceCanvas";
 import type { FaceSkin } from "./faceSkin";
+import { KittCanvas } from "./KittCanvas";
 import { MarshmallowCanvas } from "./MarshmallowCanvas";
 
 export interface FaceSurfaceProps extends FaceCanvasProps {
@@ -27,7 +28,7 @@ function useReducedMotion(explicit: boolean | undefined): boolean {
 /** Switches appearance only; state authority and input provenance stay shared. */
 export function FaceSurface({ skin, reducedMotion, ...props }: FaceSurfaceProps) {
   const reduce = useReducedMotion(reducedMotion);
-  return skin === "marshmallow"
-    ? <MarshmallowCanvas {...props} reducedMotion={reduce} />
-    : <FaceCanvas {...props} reducedMotion={reduce} />;
+  if (skin === "marshmallow") return <MarshmallowCanvas {...props} reducedMotion={reduce} />;
+  if (skin === "kitt") return <KittCanvas {...props} reducedMotion={reduce} />;
+  return <FaceCanvas {...props} reducedMotion={reduce} />;
 }

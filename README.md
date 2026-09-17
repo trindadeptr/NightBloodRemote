@@ -139,7 +139,9 @@ result as a small set of runtime parameters. The full route is in
 - Secure Enclave P-256 device identity and a Face ID session gate.
 - Device-only Keychain storage for tokens and pairing metadata.
 - WebRTC microphone and speaker handling in a media-only `WKWebView` on the phone and native WebRTC in CarPlay.
-- Two live WebGL faces with gaze, state, colour and amplitude animation.
+- Two live WebGL faces with gaze, state, colour and amplitude animation, plus
+  a third Canvas2D skin (Kitt) with a state- and amplitude-driven scanning
+  light bar instead of an organic face.
 - Generic procedural startup chimes with no third-party audio samples.
 - Blender 5.2 scene-generation and rendering scripts.
 - Unit tests for prompt, lifecycle, routing and heartbeat behaviour.

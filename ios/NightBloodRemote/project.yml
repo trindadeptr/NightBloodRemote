@@ -66,6 +66,8 @@ targets:
         buildPhase: resources
       - path: CharacterPrompts/Marshmallow.txt
         buildPhase: resources
+      - path: CharacterPrompts/Kitt.txt
+        buildPhase: resources
       - path: DesktopTranscript/desktop_transcript.py
         buildPhase: resources
     preBuildScripts:

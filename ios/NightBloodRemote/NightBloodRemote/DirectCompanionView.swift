@@ -255,8 +255,7 @@ struct DirectCompanionView: View {
 
         if progress < 0.08 {
             Button {
-                let offset = voice.selectedFace == .nightblood ? 1 : -1
-                selectFace(offset: offset)
+                cycleFaceForward()
             } label: {
                 VStack(spacing: 6) {
                     Text(voice.selectedFace.displayName.uppercased())
@@ -359,6 +358,18 @@ struct DirectCompanionView: View {
 
     private func selectFace(offset: Int) {
         guard voice.selectAdjacentFace(offset: offset) else { return }
+        UISelectionFeedbackGenerator().selectionChanged()
+    }
+
+    /// The tap target cycles through every face in order, wrapping from the
+    /// last back to the first. `selectFace(offset:)` clamps at either end
+    /// instead, which is right for the swipe gesture and the accessibility
+    /// stepper but would strand a forward tap at the last face.
+    private func cycleFaceForward() {
+        let cases = DirectFaceSkin.allCases
+        guard let current = cases.firstIndex(of: voice.selectedFace) else { return }
+        let next = cases[(current + 1) % cases.count]
+        guard voice.selectFace(next) else { return }
         UISelectionFeedbackGenerator().selectionChanged()
     }
 

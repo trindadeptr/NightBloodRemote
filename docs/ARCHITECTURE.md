@@ -68,14 +68,19 @@ app loads it from its bundle into a non-persistent `WKWebView`; navigation away
 from that exact file is blocked.
 
 The face layer consumes a canonical state model. It does not decide whether a
-task is working, complete, degraded or awaiting approval. NightBlood and
-Marshmallow render the same truth through different visual grammars:
+task is working, complete, degraded or awaiting approval. NightBlood,
+Marshmallow and Kitt render the same truth through different visual grammars:
 
 - `types.ts` and `resolveVisualState.ts`: canonical state contract;
 - `stateParams.ts` and `faceDirector.ts`: NightBlood expression targets;
 - `marshmallowStateParams.ts` and `marshmallowDirector.ts`: Marshmallow
   expression targets;
-- `webglFace.ts` and `webglMarshmallow.ts`: shipping renderers;
+- `kittStateParams.ts` and `kittDirector.ts`: Kitt's scanning-bar targets —
+  a state-driven comet sweep with a centre-out bloom driven directly by
+  authorised speech amplitude while speaking;
+- `webglFace.ts` and `webglMarshmallow.ts`: WebGL renderers for the two
+  organic faces; `kittRenderer.ts` draws Kitt's flat LED bar on a plain 2D
+  canvas instead, since a WebGL context buys nothing for straight rectangles;
 - `FaceSurface.tsx`: explicit face selection.
 
 The WebView may ask native Swift to start or stop the one authorised media

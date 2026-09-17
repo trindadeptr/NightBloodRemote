@@ -61,11 +61,13 @@ enum DirectReadySound: String, CaseIterable, Sendable {
 enum DirectFaceSkin: String, CaseIterable, Sendable {
     case nightblood
     case marshmallow
+    case kitt
 
     var displayName: String {
         switch self {
         case .nightblood: "NightBlood"
         case .marshmallow: "Marshmallow"
+        case .kitt: "Kitt"
         }
     }
 }
@@ -163,6 +165,7 @@ final class DirectVoiceSessionModel {
         static let readySound = "nightblood.direct.ready-sound"
         static let nightBloodVoice = "nightblood.direct.voice.nightblood"
         static let marshmallowVoice = "nightblood.direct.voice.marshmallow"
+        static let kittVoice = "nightblood.direct.voice.kitt"
     }
 
     let agentName: String
@@ -192,6 +195,14 @@ final class DirectVoiceSessionModel {
             UserDefaults.standard.set(
                 marshmallowVoice.rawValue,
                 forKey: StorageKey.marshmallowVoice
+            )
+        }
+    }
+    private(set) var kittVoice: CodexRemoteVoiceName = .ember {
+        didSet {
+            UserDefaults.standard.set(
+                kittVoice.rawValue,
+                forKey: StorageKey.kittVoice
             )
         }
     }
@@ -359,6 +370,8 @@ final class DirectVoiceSessionModel {
             .flatMap(CodexRemoteVoiceName.init(rawValue:)) ?? .cove
         marshmallowVoice = defaults.string(forKey: StorageKey.marshmallowVoice)
             .flatMap(CodexRemoteVoiceName.init(rawValue:)) ?? .sol
+        kittVoice = defaults.string(forKey: StorageKey.kittVoice)
+            .flatMap(CodexRemoteVoiceName.init(rawValue:)) ?? .ember
         // A task ID is account metadata. Public builds start empty. Older
         // builds could store the complete pasted link, so canonicalise it on
         // read and immediately discard any other stored representation.
@@ -421,6 +434,7 @@ final class DirectVoiceSessionModel {
         switch face {
         case .nightblood: nightBloodVoice
         case .marshmallow: marshmallowVoice
+        case .kitt: kittVoice
         }
     }
 
@@ -432,6 +446,7 @@ final class DirectVoiceSessionModel {
         switch face {
         case .nightblood: nightBloodVoice = realtimeVoice
         case .marshmallow: marshmallowVoice = realtimeVoice
+        case .kitt: kittVoice = realtimeVoice
         }
     }
 

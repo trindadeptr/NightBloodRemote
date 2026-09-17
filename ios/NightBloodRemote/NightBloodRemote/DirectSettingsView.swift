@@ -161,6 +161,18 @@ struct DirectSettingsView: View {
                     .accessibilityValue(
                         voice.preferredVoice(for: .marshmallow).displayName
                     )
+
+                    Picker(
+                        "Kitt",
+                        selection: preferredVoiceBinding(for: .kitt)
+                    ) {
+                        voiceOptions
+                    }
+                    .pickerStyle(.menu)
+                    .accessibilityLabel("Kitt voice")
+                    .accessibilityValue(
+                        voice.preferredVoice(for: .kitt).displayName
+                    )
                 } header: {
                     Text("Character voices")
                 } footer: {

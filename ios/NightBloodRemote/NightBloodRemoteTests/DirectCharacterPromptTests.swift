@@ -5,6 +5,7 @@ final class DirectCharacterPromptTests: XCTestCase {
     func testBundledCharacterPromptsLoadWithinProtocolLimit() throws {
         let nightBlood = try DirectCharacterPromptStore.load(for: .nightblood)
         let marshmallow = try DirectCharacterPromptStore.load(for: .marshmallow)
+        let kitt = try DirectCharacterPromptStore.load(for: .kitt)
 
         XCTAssertLessThanOrEqual(
             nightBlood.text.utf8.count,
@@ -14,8 +15,13 @@ final class DirectCharacterPromptTests: XCTestCase {
             marshmallow.text.utf8.count,
             CodexRemoteVoiceConstants.maximumPromptBytes
         )
+        XCTAssertLessThanOrEqual(
+            kitt.text.utf8.count,
+            CodexRemoteVoiceConstants.maximumPromptBytes
+        )
         XCTAssertTrue(nightBlood.text.hasPrefix("# Role\n\nThe user calls you Nightblood."))
         XCTAssertTrue(marshmallow.text.hasPrefix("# Role\n\nThe user calls you Marshmallow."))
+        XCTAssertTrue(kitt.text.hasPrefix("# Role\n\nThe user calls you Kitt."))
     }
 
     func testBundledCharacterSelectsReplyStyleIndependentlyOfVoice() throws {

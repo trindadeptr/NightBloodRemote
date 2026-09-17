@@ -64,6 +64,10 @@ const CUES: Record<FaceSkin, readonly DirectRealtimeStartupCue[]> = {
     proceduralCue("marshmallow/high-chime", [523.25, 659.25]),
     proceduralCue("marshmallow/major-third", [587.33, 739.99]),
   ],
+  kitt: [
+    proceduralCue("kitt/fifth-sweep", [261.63, 392.00]),
+    proceduralCue("kitt/octave-check", [293.66, 440.00]),
+  ],
 };
 
 export function randomStartupCue(skin: FaceSkin): DirectRealtimeStartupCue {

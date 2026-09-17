@@ -1,5 +1,5 @@
-/** The two deliberately different faces that consume the same truthful state. */
-export const FACE_SKINS = ["nightblood", "marshmallow"] as const;
+/** The deliberately different faces that consume the same truthful state. */
+export const FACE_SKINS = ["nightblood", "marshmallow", "kitt"] as const;
 
 export type FaceSkin = (typeof FACE_SKINS)[number];
 
@@ -8,7 +8,7 @@ export const FACE_SKIN_STORAGE_KEY = "nightblood.face.skin";
 export const FACE_SKIN_CHANGED_EVENT = "nightblood-face-skin-changed";
 
 export function parseFaceSkin(value: unknown): FaceSkin | null {
-  return value === "nightblood" || value === "marshmallow" ? value : null;
+  return FACE_SKINS.includes(value as FaceSkin) ? (value as FaceSkin) : null;
 }
 
 export function readFaceSkin(storage?: Pick<Storage, "getItem"> | null): FaceSkin {
