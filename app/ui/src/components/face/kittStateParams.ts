@@ -42,7 +42,10 @@ const READY = KITT_COLOURS.ready;
 /** Every canonical state is explicit; adding a new VisualState must fail here. */
 export const KITT_STATE_PARAMS: Record<VisualState, KittStateParams> = {
   offline: {
-    mode: "off", colour: RED, sweepHz: 0, cometWidth: 0.22, floor: 0, ampGain: 0,
+    // Never fully unlit: a dark bar is indistinguishable from a frozen
+    // render. NightBlood and Marshmallow both stay faintly visible while
+    // offline, so Kitt gets a slow, dim static glow instead of true black.
+    mode: "sweep", colour: RED, sweepHz: 0.15, cometWidth: 0.30, floor: 0.04, ampGain: 0,
   },
   starting: {
     mode: "sweep", colour: AMBER, sweepHz: 0.6, cometWidth: 0.24, floor: 0.10, ampGain: 0,
