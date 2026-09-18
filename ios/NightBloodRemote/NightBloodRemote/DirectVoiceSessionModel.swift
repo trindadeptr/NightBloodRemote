@@ -1056,7 +1056,10 @@ final class DirectVoiceSessionModel {
         if hasRecentConfirmedStop {
             return
         }
-        throw DirectVoiceSessionError.noOwnedSession
+        // Stop is intentionally idempotent. The web view can outlive the
+        // native session during idle cleanup, so an already-closed session is
+        // a successful no-op rather than a user-visible error.
+        return
     }
 
     func applicationDidEnterBackground() {

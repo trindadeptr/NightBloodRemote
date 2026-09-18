@@ -19,6 +19,17 @@ final class DeviceAccessGate {
     private var lifecycleGeneration: UInt64 = 0
     private var automaticUnlockPending = false
 
+    /// Development builds start directly so local iteration does not require
+    /// Face ID on every launch. Release builds always keep the device-owner
+    /// check enabled; flip the debug value to `true` when testing that path.
+    private static var requiresFaceID: Bool {
+        #if DEBUG
+        return false
+        #else
+        return true
+        #endif
+    }
+
     private static var simulatesLock: Bool {
         ProcessInfo.processInfo.arguments.contains("--nightblood-lock-simulator")
     }
@@ -77,6 +88,11 @@ final class DeviceAccessGate {
         reason: String,
         expectedLifecycleGeneration: UInt64?
     ) async -> Bool {
+        guard Self.requiresFaceID else {
+            state = .unlocked
+            lastError = nil
+            return true
+        }
         if isUnlocked { return true }
         guard state != .unlocking else { return false }
         if let expectedLifecycleGeneration,
