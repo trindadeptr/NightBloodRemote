@@ -14,7 +14,7 @@ export class KittRenderer {
     this.ctx = ctx;
   }
 
-  render(uniforms: KittUniforms, width: number, height: number, _ready: number): void {
+  render(uniforms: KittUniforms, width: number, height: number, ready: number): void {
     const ctx = this.ctx;
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, width, height);
@@ -37,6 +37,7 @@ export class KittRenderer {
 
     for (let i = 0; i < count; i++) {
       const level = clamp01(segments[i]);
+      const arrival = clamp01(ready);
       const column = Math.floor(i / KITT_COLUMN_ROWS);
       const row = i % KITT_COLUMN_ROWS;
       // The centre column reaches higher/lower than the two outer stacks.
@@ -47,8 +48,11 @@ export class KittRenderer {
       // Dim housing behind every cell so the bar reads even fully unlit.
       ctx.fillStyle = "rgba(75,8,3,0.22)";
       ctx.fillRect(x, y, segmentWidth, barHeight);
-      if (level <= 0.01) continue;
-      const alpha = level;
+      if (level <= 0.01 && arrival <= 0.01) continue;
+      // The ready cue travels through all three columns as a brief glow.
+      // Speech remains the only source of the normal amplitude animation.
+      const cueLevel = Math.max(level, arrival * (0.48 + 0.52 * (row % 3 === 1 ? 1 : 0.78)));
+      const alpha = clamp01(cueLevel);
       ctx.shadowColor = `rgba(${r255},${g255},${b255},${Math.min(1, level)})`;
       ctx.shadowBlur = barHeight * (0.6 + level * 1.4);
       const glass = ctx.createLinearGradient(0, y, 0, y + barHeight);

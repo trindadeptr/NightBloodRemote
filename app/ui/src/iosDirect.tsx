@@ -75,6 +75,7 @@ function FaceApp() {
   const [errorTransient, setErrorTransient] = useState(false);
   const [nowMs, setNowMs] = useState(() => performance.now());
   const [readyFlashStartedAtMs, setReadyFlashStartedAtMs] = useState<number | null>(null);
+  const readyFlashStartedRef = useRef<number | null>(null);
   const levelRef = useRef(0);
   const watchedRef = useRef<Watched | null>(null);
   const backingWorkRef = useRef(false);
@@ -124,6 +125,8 @@ function FaceApp() {
     const realtime = new DirectRealtimeVoice({
       onState: (state, detail) => {
         if (state === "starting") {
+          readyFlashStartedRef.current = null;
+          setReadyFlashStartedAtMs(null);
           resetTurnActivity();
           setConnection("starting");
           setInteraction("idle");
@@ -149,8 +152,11 @@ function FaceApp() {
         levelRef.current = level;
       },
       onEvent: (kind, detail = {}) => {
-        if (kind === "session-ready") {
-          setReadyFlashStartedAtMs(performance.now());
+        if (kind === "startup-cue-started"
+          || (kind === "session-ready" && readyFlashStartedRef.current == null)) {
+          const startedAt = performance.now();
+          readyFlashStartedRef.current = startedAt;
+          setReadyFlashStartedAtMs(startedAt);
         } else if (kind === "speech-started") {
           userSpeakingRef.current = true;
           assistantSpeakingRef.current = false;

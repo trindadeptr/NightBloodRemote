@@ -317,6 +317,7 @@ export class DirectRealtimeVoice {
     const track = this.stream?.getAudioTracks()[0];
     this.startupCuePlaying = true;
     if (track?.readyState === "live") track.enabled = false;
+    this.cb.onEvent("startup-cue-started");
 
     // Play the character cue inside WebKit's already-established voice audio
     // graph. Taking ownership of AVAudioSession natively before getUserMedia
