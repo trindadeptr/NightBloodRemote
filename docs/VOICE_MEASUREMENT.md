@@ -40,6 +40,9 @@ recent 80 events; collect it immediately after a short sample. Missing events,
 a crash, a disconnect without a close notification, or a truncated trace make
 the sample incomplete. Turn notifications prove observed turns, not billing or
 causal attribution to voice: concurrent typed work can use the same task.
+A voice delegation can also steer an already-running turn without producing
+another `turn/started` notification. Zero new turns does not mean zero Codex
+work; compare handoff markers with received delegations and task activity.
 Quota percentages are account-wide and coarse; zero change does not prove free
 usage. This trace does not expose server-side audio token billing.
 
