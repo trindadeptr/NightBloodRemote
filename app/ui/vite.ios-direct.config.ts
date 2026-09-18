@@ -1,9 +1,17 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { resolve } from "path";
+import { existsSync, readFileSync } from "node:fs";
+
+const localKittCue = resolve(import.meta.dirname, "../../.build/kitt-ready.wav");
 
 export default defineConfig({
   plugins: [react()],
+  define: {
+    __KITT_READY_CUE__: JSON.stringify(existsSync(localKittCue)
+      ? `data:audio/wav;base64,${readFileSync(localKittCue).toString("base64")}`
+      : null),
+  },
   base: "./",
   build: {
     // The finished page is one signed inline file. Omitting Vite's preload

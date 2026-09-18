@@ -240,7 +240,8 @@ final class NightBloodCarPlayTests: XCTestCase {
             for sound: DirectReadySound in [.character, .tone] {
                 let data = DirectVoiceReadyCuePlayer.cueData(character: character, sound: sound)
                 let audio = try AVAudioPlayer(data: data)
-                XCTAssertEqual(audio.duration, 0.24, accuracy: 0.001)
+                let expectedDuration = character == .kitt && sound == .character ? 0.30 : 0.24
+                XCTAssertEqual(audio.duration, expectedDuration, accuracy: 0.001)
             }
         }
     }
@@ -263,6 +264,53 @@ final class NightBloodCarPlayTests: XCTestCase {
         for state: NightBloodCarPlayVisualState in [.ready, .unavailable, .listening, .working] {
             XCTAssertEqual(try pixels(state).brightPixelCount(in: 0.7..<0.85), 0)
         }
+    }
+
+    func testVoiceMeasurementSeparatesReplayAndTranscriptionFromExecutions() {
+        var measurement = CodexVoiceUsageMeasurement()
+        for _ in 0..<12 { measurement.increment("transcript.done") }
+        measurement.increment("source.turn/started", uniqueID: "turn-one")
+        measurement.increment("source.turn/started", uniqueID: "turn-one")
+        measurement.increment("source.turn/started", uniqueID: "turn-two")
+        XCTAssertTrue(measurement.summary(for: "source.turn/started").contains("observed=3 unique=2"))
+        XCTAssertTrue(measurement.summary(for: "transcript.done").contains("observed=12 unique=0"))
+        XCTAssertTrue(measurement.summary(for: "rpc.attempted.turn/start").contains("observed=0"))
+        XCTAssertFalse(measurement.summary(for: "source.turn/started").contains("turn-one"))
+    }
+
+    @MainActor
+    func testPhonePreparesSavedTaskWhenUIKitBecomesActiveAfterSetup() async {
+        var interactive = false
+        let setup = CarPlayReadyVoiceSetup(suspendPreparation: true)
+        let model = DirectVoiceSessionModel(
+            liveActivityPublisher: CarPlayNullLiveActivityPublisher(),
+            interactiveSurfaceIsActive: { interactive }
+        )
+        let taskID = "11111111-1111-4111-8111-111111111111"
+        model.taskReference = taskID
+        model.install(setup: setup)
+        model.attach(face: CarPlayFaceSpy(), role: .iPhone)
+        model.applicationDidBecomeActive()
+        await Task.yield()
+        XCTAssertEqual(setup.preparationCalls, 0)
+        XCTAssertEqual(model.state, .unavailable)
+
+        // Setup is already ready; no field edit or Settings/Done follows.
+        interactive = true
+        model.applicationDidBecomeActive()
+        for _ in 0..<100 {
+            if setup.preparationCalls == 1 { break }
+            try? await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertEqual(setup.preparationCalls, 1)
+        XCTAssertEqual(model.taskReference, taskID)
+        XCTAssertFalse(model.hasOwnedVoice)
+        XCTAssertFalse(model.canStartVoice)
+        model.applicationDidBecomeActive()
+        await Task.yield()
+        XCTAssertEqual(setup.preparationCalls, 1)
+        interactive = false
+        model.applicationDidEnterBackground()
     }
 
     @MainActor

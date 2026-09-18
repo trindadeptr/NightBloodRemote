@@ -42,6 +42,19 @@ struct DirectNightBloodRemoteApp: App {
                 accessGate: accessGate
             )
             .preferredColorScheme(.dark)
+            // Scene-based applications don't deliver the legacy application
+            // delegate's didBecomeActive callback. Observe UIKit activation
+            // directly; SwiftUI scenePhase can precede applicationState.
+            .onReceive(NotificationCenter.default.publisher(
+                for: UIApplication.didBecomeActiveNotification
+            )) { _ in
+                recoverVoiceAfterUIKitActivation()
+            }
+            .onReceive(NotificationCenter.default.publisher(
+                for: UIScene.didActivateNotification
+            )) { _ in
+                recoverVoiceAfterUIKitActivation()
+            }
             .task {
                 if scenePhase == .active {
                     UIApplication.shared.isIdleTimerDisabled = true
@@ -49,6 +62,7 @@ struct DirectNightBloodRemoteApp: App {
                 guard await accessGate.unlock() else { return }
                 setup.applicationDidBecomeActive()
                 setup.refreshPersistedState()
+                voice.applicationDidBecomeActive()
                 voice.startGazeTracking()
             }
         }
@@ -81,6 +95,7 @@ struct DirectNightBloodRemoteApp: App {
                     }
                     setup.applicationDidBecomeActive()
                     setup.refreshPersistedState()
+                    voice.applicationDidBecomeActive()
                     voice.startGazeTracking()
                 }
             case .background:
@@ -105,6 +120,17 @@ struct DirectNightBloodRemoteApp: App {
             @unknown default:
                 break
             }
+        }
+    }
+
+    private func recoverVoiceAfterUIKitActivation() {
+        Task { @MainActor in
+            await Task.yield()
+            NightBloodCarPlayDiagnostics.record("uikit.activation")
+            guard accessGate.isUnlocked,
+                  NightBloodVoiceSceneActivity.isIPhoneApplicationActive
+            else { return }
+            voice.applicationDidBecomeActive()
         }
     }
 }

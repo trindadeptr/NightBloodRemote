@@ -12,7 +12,8 @@ final class DirectVoiceReadyCuePlayer: NSObject, AVAudioPlayerDelegate {
     /// Generated PCM in memory, with no recordings or sound-library assets.
     static func cueData(character: DirectFaceSkin, sound: DirectReadySound) -> Data {
         let rate = 16_000
-        let count = 3_840
+        let sequential = character == .kitt && sound == .character
+        let count = sequential ? 4_800 : 3_840
         let frequencies: [Double]
         if sound == .tone {
             frequencies = [440, 660]
@@ -20,7 +21,7 @@ final class DirectVoiceReadyCuePlayer: NSObject, AVAudioPlayerDelegate {
             switch character {
             case .nightblood: frequencies = [196, 293.66]
             case .marshmallow: frequencies = [523.25, 659.25]
-            case .kitt: frequencies = [261.63, 392.00]
+            case .kitt: frequencies = [660, 880]
             }
         }
         var data = Data()
@@ -37,9 +38,12 @@ final class DirectVoiceReadyCuePlayer: NSObject, AVAudioPlayerDelegate {
         for index in 0..<count {
             let time = Double(index) / Double(rate)
             let progress = Double(index) / Double(count - 1)
-            let envelope = min(1, progress / 0.08) * min(1, (1 - progress) / 0.35) * 0.22
-            let sample = frequencies.reduce(0.0) { $0 + sin(2 * .pi * $1 * time) }
-                / Double(frequencies.count)
+            let noteTime = time < 0.15 ? time : time - 0.15
+            let noteEnvelope = min(1, noteTime / 0.008) * max(0, min(1, (0.12 - noteTime) / 0.03))
+            let envelope = (sequential ? noteEnvelope : min(1, progress / 0.08) * min(1, (1 - progress) / 0.35)) * 0.22
+            let sample = sequential
+                ? sin(2 * .pi * frequencies[time < 0.15 ? 0 : 1] * noteTime)
+                : frequencies.reduce(0.0) { $0 + sin(2 * .pi * $1 * time) } / Double(frequencies.count)
             u16(UInt16(bitPattern: Int16(sample * envelope * 32_767)))
         }
         return data

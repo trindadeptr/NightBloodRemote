@@ -1,5 +1,6 @@
 import type { FaceSkin } from "./components/face/faceSkin";
 import type { DirectRealtimeStartupCue } from "./directRealtime";
+declare const __KITT_READY_CUE__: string | null;
 
 /**
  * Small procedural chimes replace the private prototype's sampled sound
@@ -9,9 +10,10 @@ import type { DirectRealtimeStartupCue } from "./directRealtime";
 function proceduralCue(
   name: string,
   frequencies: readonly number[],
+  sequential = false,
 ): DirectRealtimeStartupCue {
   const sampleRate = 16_000;
-  const durationSeconds = 0.22;
+  const durationSeconds = sequential ? 0.30 : 0.22;
   const sampleCount = Math.floor(sampleRate * durationSeconds);
   const bytes = new Uint8Array(44 + sampleCount * 2);
   const view = new DataView(bytes.buffer);
@@ -41,8 +43,12 @@ function proceduralCue(
     const progress = index / Math.max(1, sampleCount - 1);
     const attack = Math.min(1, progress / 0.08);
     const release = Math.min(1, (1 - progress) / 0.35);
-    const envelope = attack * release * 0.22;
-    const sample = frequencies.reduce(
+    const noteTime = time < 0.15 ? time : time - 0.15;
+    const noteEnvelope = Math.min(1, noteTime / 0.008) * Math.max(0, Math.min(1, (0.12 - noteTime) / 0.03));
+    const envelope = (sequential ? noteEnvelope : attack * release) * 0.22;
+    const sample = sequential
+      ? Math.sin(2 * Math.PI * frequencies[time < 0.15 ? 0 : 1] * noteTime)
+      : frequencies.reduce(
       (total, frequency, voiceIndex) => total
         + Math.sin(2 * Math.PI * frequency * time + voiceIndex * 0.35),
       0,
@@ -65,12 +71,14 @@ const CUES: Record<FaceSkin, readonly DirectRealtimeStartupCue[]> = {
     proceduralCue("marshmallow/major-third", [587.33, 739.99]),
   ],
   kitt: [
-    proceduralCue("kitt/fifth-sweep", [261.63, 392.00]),
-    proceduralCue("kitt/octave-check", [293.66, 440.00]),
+    proceduralCue("kitt/ready-double-beep", [660, 880], true),
   ],
 };
 
 export function randomStartupCue(skin: FaceSkin): DirectRealtimeStartupCue {
+  if (skin === "kitt" && typeof __KITT_READY_CUE__ !== "undefined" && __KITT_READY_CUE__) {
+    return { name: "kitt/local-ready", dataUrl: __KITT_READY_CUE__ };
+  }
   const cues = CUES[skin];
   return cues[Math.floor(Math.random() * cues.length)];
 }

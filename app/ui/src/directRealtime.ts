@@ -540,7 +540,7 @@ export class DirectRealtimeVoice {
     // native App Server turn notifications remain authoritative for when the
     // violet working state ends.
     if (type === "conversation.handoff.requested" || type === "delegation.created") {
-      this.cb.onEvent("delegation-started");
+      this.cb.onEvent("delegation-started", { marker: type });
     }
     if (type.endsWith("input_audio_transcription.completed") && event.transcript) {
       this.finishInputTranscript(event.transcript);
@@ -577,7 +577,9 @@ export class DirectRealtimeVoice {
   }
 
   private mergeTranscriptPart(part: string): string {
-    const words = part.match(/[A-Za-z0-9%']+/g) ?? [];
+    // Keep letters from every language, including combining accent marks.
+    // NFC also makes overlap matching consistent across Unicode encodings.
+    const words = part.normalize("NFC").match(/[\p{L}\p{M}\p{N}%’']+/gu) ?? [];
     let overlap = Math.min(this.inputTranscriptParts.length, words.length);
     while (overlap > 0) {
       const tail = this.inputTranscriptParts.slice(-overlap).map((word) => word.toLowerCase());
@@ -591,7 +593,7 @@ export class DirectRealtimeVoice {
   }
 
   private static normaliseTranscript(text: string): string {
-    return text.trim().toLocaleLowerCase().replace(/\s+/g, " ");
+    return text.normalize("NFC").trim().toLocaleLowerCase().replace(/\s+/g, " ");
   }
 
   private static sameTranscript(left: string, right: string): boolean {

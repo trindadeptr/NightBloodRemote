@@ -559,6 +559,7 @@ actor CodexRemoteVoiceTransport {
     ] = [:]
     private var chunks: [Int64: CodexRemoteVoiceChunkAssembly] = [:]
     private var attestations: [String] = []
+    private var usageMeasurement = CodexVoiceUsageMeasurement()
     private var performanceID = UUID()
     private static let performanceLog = Logger(subsystem: "com.example.nightblood.remote", category: "performance")
     private var sourceContext: CodexRemoteVoiceSourceContext?
@@ -1473,14 +1474,19 @@ actor CodexRemoteVoiceTransport {
         pending[key] = response
         defer { pending.removeValue(forKey: key) }
         do {
+            usageMeasurement.increment("rpc.attempted." + method.rawValue)
             try await sendPreparedFrame(frame)
-            return try await codexRemoteVoiceWithTimeout(
+            await recordUsage("rpc.sent." + method.rawValue)
+            let result = try await codexRemoteVoiceWithTimeout(
                 seconds: timeout,
                 timeoutError: .operationOutcomeUnknown(method.rawValue)
             ) {
                 try await response.wait()
             }
+            await recordUsage("rpc.accepted." + method.rawValue)
+            return result
         } catch let error as CodexRemoteVoiceError {
+            await recordUsage("rpc.failedOrUnknown." + method.rawValue)
             if case .appServerRejected = error {
                 throw error
             }
@@ -1491,10 +1497,17 @@ actor CodexRemoteVoiceTransport {
                 method.rawValue
             )
         } catch {
+            await recordUsage("rpc.failedOrUnknown." + method.rawValue)
             throw CodexRemoteVoiceError.operationOutcomeUnknown(
                 method.rawValue
             )
         }
+    }
+
+    private func recordUsage(_ event: String, turnID: String? = nil) async {
+        usageMeasurement.increment(event, uniqueID: turnID)
+        let detail = usageMeasurement.summary(for: event)
+        await NightBloodCarPlayDiagnostics.record("voice.measure." + event, detail: detail)
     }
 
     private func notifyInitialized() async throws {
@@ -2920,6 +2933,13 @@ actor CodexRemoteVoiceTransport {
             try await handleDesktopOutput(params)
             return
         }
+        if (params["threadId"]?.stringValue == threadID
+            || (params["threadId"]?.stringValue).map(nativeCreatedThreadIDs.contains) == true),
+           method == "turn/started" || method == "turn/completed",
+           let observedTurnID = Self.boundedTurnID(from: params) {
+            let scope = params["threadId"]?.stringValue == threadID ? "source" : "created"
+            await recordUsage(scope + "." + method, turnID: observedTurnID)
+        }
         if let createdID = params["threadId"]?.stringValue,
            nativeCreatedThreadIDs.contains(createdID),
            method == "thread/status/changed" || method == "turn/completed"
@@ -2967,6 +2987,7 @@ actor CodexRemoteVoiceTransport {
             sdpAnswer = sdp
             await resolveReadinessIfComplete()
         case "thread/realtime/started":
+            await recordUsage("session.started")
             serverStarted = true
             realtimeClosed = false
             if state != .startOutcomeUnknown {
@@ -2990,6 +3011,7 @@ actor CodexRemoteVoiceTransport {
             await readiness?.resolve(.failure(error))
             publish()
         case "thread/realtime/transcript/delta":
+            usageMeasurement.increment("transcript.delta")
             guard let role = params["role"]?.stringValue,
                   let delta = params["delta"]?.stringValue,
                   (role == "user" || role == "assistant"),
@@ -3005,6 +3027,7 @@ actor CodexRemoteVoiceTransport {
                 )
             )
         case "thread/realtime/transcript/done":
+            usageMeasurement.increment("transcript.done")
             guard let role = params["role"]?.stringValue,
                   let text = params["text"]?.stringValue,
                   (role == "user" || role == "assistant"),
@@ -3020,6 +3043,12 @@ actor CodexRemoteVoiceTransport {
                 )
             )
         default:
+            await recordUsage("session.closed")
+            for event in ["transcript.delta", "transcript.done", "rpc.attempted.thread/realtime/start", "rpc.attempted.turn/start", "source.turn/started", "source.turn/completed", "created.turn/started", "created.turn/completed"] {
+                await NightBloodCarPlayDiagnostics.record(
+                    "voice.measure." + event, detail: usageMeasurement.summary(for: event)
+                )
+            }
             realtimeClosed = true
             backingTurnID = nil
             serverStarted = false
@@ -3390,5 +3419,32 @@ actor CodexRemoteVoiceTransport {
         default:
             false
         }
+    }
+}
+
+/// Counts protocol evidence, never transcript content. IDs stay in memory only.
+/// Notifications can be replayed: raw observations and unique turns differ.
+struct CodexVoiceUsageMeasurement {
+    private var counts: [String: Int] = [:]
+    private var identifiers: [String: Set<String>] = [:]
+    private var saturated: Set<String> = []
+    private let startedAt = Date()
+    private let sample = UUID().uuidString.prefix(8)
+    private let identifierLimit = 4096
+
+    mutating func increment(_ event: String, uniqueID: String? = nil) {
+        counts[event, default: 0] += 1
+        guard let uniqueID else { return }
+        if identifiers[event, default: []].contains(uniqueID) { return }
+        guard identifiers[event, default: []].count < identifierLimit else {
+            saturated.insert(event)
+            return
+        }
+        identifiers[event, default: []].insert(uniqueID)
+    }
+
+    func summary(for event: String) -> String {
+        "sample=\(sample) observed=\(counts[event, default: 0]) unique=\(identifiers[event]?.count ?? 0) "
+            + "capped=\(saturated.contains(event)) elapsedMs=\(Int(Date().timeIntervalSince(startedAt) * 1000))"
     }
 }

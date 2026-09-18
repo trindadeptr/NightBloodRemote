@@ -96,6 +96,10 @@ struct DirectCompanionView: View {
         .onChange(of: accessGate.isUnlocked) { _, isUnlocked in
             if !isUnlocked {
                 showingSettings = false
+            } else {
+                // A biometric overlay can defer readiness until unlock finishes.
+                // Re-evaluate the saved task without requiring Settings/Done.
+                voice.refreshAvailability()
             }
         }
         .alert(
@@ -544,6 +548,13 @@ private struct DirectConversationMessage: View {
     let agentName: String
 
     private var isUser: Bool { item.role == .user }
+    private var displayedText: String {
+        item.text.replacingOccurrences(
+            of: "(?i)\\bKitt\\b",
+            with: "KITT",
+            options: .regularExpression
+        )
+    }
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 0) {
@@ -566,7 +577,7 @@ private struct DirectConversationMessage: View {
                             : .purple.opacity(0.82)
                     )
 
-                Text(item.text)
+                Text(displayedText)
                     .font(.system(size: 19, design: .rounded))
                     .foregroundStyle(.white.opacity(item.isFinal ? 0.90 : 0.58))
                     .multilineTextAlignment(.leading)

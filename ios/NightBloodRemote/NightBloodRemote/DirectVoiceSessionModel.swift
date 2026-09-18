@@ -235,6 +235,7 @@ final class DirectVoiceSessionModel {
         }
     }
     private(set) var webReady = false
+    private var lastAvailabilityDiagnostic: String?
     private(set) var isCarPlayConnected = false
     private(set) var readyFlashActive = false
     private var readyFlashTask: Task<Void, Never>?
@@ -1232,6 +1233,13 @@ final class DirectVoiceSessionModel {
                     }.joined(separator: " ")
                 Self.performanceLog.info("voice id=\(self.performanceID.uuidString, privacy: .public) metrics=\(numeric, privacy: .public)")
             }
+            if kind == "delegation-started",
+               let detail = message["detail"] as? [String: Any],
+               let marker = detail["marker"] as? String,
+               ["conversation.handoff.requested", "delegation.created"].contains(marker) {
+                // Raw markers are not proof of a new Codex execution.
+                NightBloodCarPlayDiagnostics.record("voice.measure.marker", detail: marker)
+            }
             switch kind {
             case "speech-started":
                 awaitingAssistant = false
@@ -1274,6 +1282,15 @@ final class DirectVoiceSessionModel {
     }
 
     func refreshAvailability() {
+        defer {
+            let detail = "state=\(state.rawValue) configured=\(isConfigured) "
+                + "active=\(interactiveSurfaceIsActive()) web=\(webReady) "
+                + "prepared=\(desktopPrepared) preparing=\(isPreparingDesktopConnection)"
+            if detail != lastAvailabilityDiagnostic {
+                lastAvailabilityDiagnostic = detail
+                NightBloodCarPlayDiagnostics.record("voice.availability", detail: detail)
+            }
+        }
         let taskID = Self.canonicalTaskID(from: taskReference)
         let eligible = isConfigured && (!appInBackground || isCarPlayConnected)
             // CarPlay didConnect precedes foregroundActive on a cold launch.
@@ -1359,6 +1376,7 @@ final class DirectVoiceSessionModel {
                 self.state = .failed
                 self.face?.setAvailable(false)
                 self.lastError = error.localizedDescription
+                NightBloodCarPlayDiagnostics.record("voice.preparation.failed")
             }
         }
     }

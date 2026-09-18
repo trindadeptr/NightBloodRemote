@@ -6,7 +6,7 @@ import { KittDirector } from "./kittDirector";
 import { KittRenderer } from "./kittRenderer";
 
 /**
- * The complete live KITT surface: a scanning light bar instead of a face.
+ * The complete live KITT surface: an interior voice modulator instead of a face.
  * Consumes the same three truthful inputs as NightBlood and Marshmallow —
  * resolved canonical state, authorised output amplitude and the
  * reduced-motion flag. `liveWatched` is accepted for prop-shape parity with
