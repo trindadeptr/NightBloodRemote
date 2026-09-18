@@ -22,6 +22,7 @@ export interface DirectRealtimeStartupCue {
 
 export interface DirectRealtimeOptions {
   readonly getStartupCue?: () => DirectRealtimeStartupCue | null;
+  readonly silentStartupCue?: () => boolean;
 }
 
 const MIC_CONSTRAINTS: MediaStreamConstraints = {
@@ -367,6 +368,7 @@ export class DirectRealtimeVoice {
     const context = this.audioContext;
     const cue = this.selectedStartupCue;
     if (!context || !cue) {
+      if (this.options.silentStartupCue?.()) return;
       await this.playListeningReadyCue();
       return;
     }

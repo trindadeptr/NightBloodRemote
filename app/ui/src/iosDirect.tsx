@@ -230,6 +230,7 @@ function FaceApp() {
       },
     }, {
       getStartupCue: () => readySoundRef.current === "tone" ? null : randomStartupCue(faceSkinRef.current),
+      silentStartupCue: () => faceSkinRef.current === "kitt",
     });
 
     window.NightBloodDirect = {
