@@ -111,6 +111,10 @@ function FaceApp() {
     let realtime: DirectRealtimeVoice;
     const armIdleStopTimer = () => {
       clearIdleStopTimer();
+      if (userSpeakingRef.current
+        || assistantSpeakingRef.current
+        || awaitingAssistantRef.current
+        || backingWorkRef.current) return;
       idleStopTimer = window.setTimeout(() => {
         idleStopTimer = null;
         if (idleStopInFlight) return;
@@ -215,11 +219,11 @@ function FaceApp() {
           assistantSpeakingRef.current = true;
           awaitingAssistantRef.current = false;
           syncInteraction();
-          armIdleStopTimer();
         } else if (kind === "assistant-done") {
           assistantSpeakingRef.current = false;
           awaitingAssistantRef.current = false;
           syncInteraction();
+          armIdleStopTimer();
         }
         postEvent({ type: "event", kind, detail });
       },
