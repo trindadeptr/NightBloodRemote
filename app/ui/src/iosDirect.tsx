@@ -164,6 +164,14 @@ function FaceApp() {
           idleStopInFlight = false;
           resetTurnActivity();
           setInteraction("idle");
+        } else if (idleStopInFlight) {
+          // Idle shutdown may race the relay acknowledgement. The local
+          // session is already closed; do not show a transient error for the
+          // automatic cleanup path.
+          clearIdleStopTimer();
+          resetTurnActivity();
+          setConnection("connected");
+          setInteraction("idle");
         } else {
           resetTurnActivity();
           setConnection("connected");
