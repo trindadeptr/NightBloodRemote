@@ -102,6 +102,30 @@ function FaceApp() {
   }, []);
 
   useEffect(() => {
+    let idleStopTimer: number | null = null;
+    let idleStopInFlight = false;
+    const clearIdleStopTimer = () => {
+      if (idleStopTimer !== null) window.clearTimeout(idleStopTimer);
+      idleStopTimer = null;
+    };
+    let realtime: DirectRealtimeVoice;
+    const armIdleStopTimer = () => {
+      clearIdleStopTimer();
+      idleStopTimer = window.setTimeout(() => {
+        idleStopTimer = null;
+        if (idleStopInFlight) return;
+        idleStopInFlight = true;
+        postEvent({ type: "event", kind: "idle-stop-started", detail: { idleSeconds: 15 } });
+        void realtime.stop()
+          .then(() => postEvent({ type: "event", kind: "idle-stop-completed" }))
+          .catch((error: unknown) => {
+            idleStopInFlight = false;
+            postEvent({ type: "event", kind: "idle-stop-failed", detail: {
+              error: error instanceof Error ? error.message : String(error),
+            }});
+          });
+      }, 15_000);
+    };
     const syncInteraction = () => {
       if (userSpeakingRef.current) {
         setInteraction("listening");
@@ -122,9 +146,11 @@ function FaceApp() {
       setBackingWorkActive(false);
     };
 
-    const realtime = new DirectRealtimeVoice({
+    realtime = new DirectRealtimeVoice({
       onState: (state, detail) => {
         if (state === "starting") {
+          clearIdleStopTimer();
+          idleStopInFlight = false;
           readyFlashStartedRef.current = null;
           setReadyFlashStartedAtMs(null);
           resetTurnActivity();
@@ -134,6 +160,8 @@ function FaceApp() {
           setConnection("connected");
           syncInteraction();
         } else if (state === "idle") {
+          clearIdleStopTimer();
+          idleStopInFlight = false;
           resetTurnActivity();
           setInteraction("idle");
         } else {
@@ -157,7 +185,9 @@ function FaceApp() {
           const startedAt = performance.now();
           readyFlashStartedRef.current = startedAt;
           setReadyFlashStartedAtMs(startedAt);
+          if (kind === "session-ready") armIdleStopTimer();
         } else if (kind === "speech-started") {
+          clearIdleStopTimer();
           userSpeakingRef.current = true;
           assistantSpeakingRef.current = false;
           awaitingAssistantRef.current = false;
@@ -166,14 +196,18 @@ function FaceApp() {
           userSpeakingRef.current = false;
           awaitingAssistantRef.current = true;
           syncInteraction();
+          armIdleStopTimer();
         } else if (kind === "delegation-started") {
+          clearIdleStopTimer();
           awaitingAssistantRef.current = true;
           syncInteraction();
         } else if (kind === "assistant-speaking") {
+          clearIdleStopTimer();
           userSpeakingRef.current = false;
           assistantSpeakingRef.current = true;
           awaitingAssistantRef.current = false;
           syncInteraction();
+          armIdleStopTimer();
         } else if (kind === "assistant-done") {
           assistantSpeakingRef.current = false;
           awaitingAssistantRef.current = false;
@@ -278,6 +312,7 @@ function FaceApp() {
     };
     postEvent({ type: "ready" });
     return () => {
+      clearIdleStopTimer();
       delete window.NightBloodDirect;
       void realtime.closeLocalOnly();
     };
