@@ -101,6 +101,22 @@ See [Face creation](FACE_CREATION.md) for the complete workflow.
 
 ## State and data lifetimes
 
+### Cost baseline before routing changes
+
+The Phase 0 work extends native aggregate protocol measurements and adds offline
+synthetic routing/voice corpora. It does not introduce a production router,
+Apple intelligence or local speech. See the [baseline ledger](KITT_PHASE0_BASELINE.md)
+for evidence, measurement definitions and the pending physical gate, and
+[benchmark instructions](../benchmarks/kitt/README.md) for offline evaluation.
+
+Token observations are scoped to the selected source task. Cumulative upstream
+snapshots establish an observed window; they are not Voice-only session billing.
+Finalized transcript parts are not guaranteed user turns. Realtime-open duration
+is an exposure proxy, not measured audio duration. Missing data remains unavailable.
+Measurement never supplies routing authority or changes at-most-once behavior.
+
+### Storage
+
 | Value | Owner | Lifetime |
 |---|---|---|
 | OAuth token set | native Keychain | device-only, while retained |

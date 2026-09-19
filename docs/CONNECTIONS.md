@@ -219,6 +219,12 @@ long-lived server API key.
 
 ## Failure and recovery
 
+For cost measurement, follow the [Phase 0 baseline procedure](KITT_PHASE0_BASELINE.md).
+The optional upstream `thread/tokenUsage/updated` observation adds no request or
+tool capability. Only exact selected-task evidence contributes to its token
+window; unsupported or absent evidence remains unavailable. Protocol counters,
+connection exposure and simulated tests do not prove physical Voice acceptance.
+
 - **Desktop version mismatch / endpoint missing:** update the desktop app,
   not only its CLI. The older desktop 26.623.141536 (4753) uses a different
   IPC location. This helper deliberately has no legacy-location fallback.

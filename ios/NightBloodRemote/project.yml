@@ -44,6 +44,7 @@ targets:
       - path: NightBloodRemote/CodexRemoteURLSessionWebSocket.swift
       - path: NightBloodRemote/CodexRemoteVoiceTransport.swift
       - path: NightBloodRemote/CodexRemoteVoiceTypes.swift
+      - path: NightBloodRemote/CodexVoiceUsageMeasurement.swift
       - path: NightBloodRemote/DirectCharacterPromptStore.swift
       - path: NightBloodRemote/DeviceAccessGate.swift
       - path: NightBloodRemote/DirectCodexRemoteSetupModel.swift

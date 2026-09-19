@@ -22,11 +22,20 @@ their own account, product and retention settings.
 | Bounded Voice task tools | New-task prompt/title/model choice; created-task title, status and bounded message text; current-workspace availability | Created tasks and their messages are persisted by the paired Codex host; the app keeps only session-scoped receipts | Tool requests/results traverse the experimental controller and Realtime service. The model receives a synthetic project alias/path, never an account-specific project ID or host filesystem path |
 | Voice automation tool | Heartbeat name, prompt, schedule, target task UUID and notification status | Disabled by default; when deliberately enabled, creates or deletes an automation directory on the paired host | Bounded tool requests/results traverse the experimental controller and Realtime service |
 | Desktop transcript helper | Selected task transcript and bounded stream metadata | Reads existing host transcript; no bundled transcript or personal task identity | Authenticated controller connection to the phone |
-| CarPlay diagnostics | Up to 80 coarse lifecycle events, timestamps and state labels | App preferences | OS logging only; not sent to an analytics service |
+| CarPlay diagnostics | Up to 80 coarse lifecycle events, timestamps, state labels and aggregate protocol/usage measurements | App preferences | OS logging only; not sent to an analytics service |
 | Live Activity | Conversation state and local controls | Managed by iOS | No transcript content is placed in the activity |
 | Procedural cue generator | Synthesised PCM samples | None | None |
 
 ## Permissions
+
+Phase 0 usage measurements retain only numeric aggregates and bounded labels in
+the existing diagnostics channel: protocol observations, distinct-turn counts,
+transcript-part counts/byte lengths, observed token-window values and connection
+exposure. Task/turn identifiers used to validate or deduplicate evidence stay in
+bounded native memory and are not included in metric output. Transcript text and
+audio are not recorded for metrics. The offline benchmark uses synthetic text;
+it neither collects live conversations nor sends fixtures to a cloud service.
+
 
 - **Camera:** provides local gaze/head-pose numbers. Frames are not retained or
   sent to JavaScript, the Mac or a server.

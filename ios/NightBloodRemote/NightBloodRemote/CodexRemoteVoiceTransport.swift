@@ -1284,6 +1284,8 @@ actor CodexRemoteVoiceTransport {
         _ error: CodexRemoteVoiceError,
         socket: any CodexRemoteWebSocketConnection
     ) async {
+        let usageSummaries = realtimeStartRequestBegan
+            ? takeUsageDiagnostics(clean: false) : nil
         readerTask = nil
         connection = nil
         controllerSession = nil
@@ -1322,6 +1324,7 @@ actor CodexRemoteVoiceTransport {
         publish()
         finishObservers()
         await socket.close()
+        await persistUsageDiagnostics(usageSummaries)
     }
 
     private func startHeartbeat() {
@@ -1508,6 +1511,24 @@ actor CodexRemoteVoiceTransport {
         usageMeasurement.increment(event, uniqueID: turnID)
         let detail = usageMeasurement.summary(for: event)
         await NightBloodCarPlayDiagnostics.record("voice.measure." + event, detail: detail)
+    }
+
+    private func takeUsageDiagnostics(
+        clean: Bool
+    ) -> [(String, String)]? {
+        usageMeasurement.realtimeEnded(
+            clean: clean,
+            at: ProcessInfo.processInfo.systemUptime
+        )
+        return usageMeasurement.takeTerminalSummaries()
+    }
+
+    private func persistUsageDiagnostics(
+        _ summaries: [(String, String)]?
+    ) async {
+        for (name, detail) in summaries ?? [] {
+            await NightBloodCarPlayDiagnostics.record(name, detail: detail)
+        }
     }
 
     private func notifyInitialized() async throws {
@@ -2933,6 +2954,13 @@ actor CodexRemoteVoiceTransport {
             try await handleDesktopOutput(params)
             return
         }
+        if method == "thread/tokenUsage/updated" {
+            usageMeasurement.observeTokenNotification(
+                params,
+                selectedThreadID: threadID
+            )
+            return
+        }
         if (params["threadId"]?.stringValue == threadID
             || (params["threadId"]?.stringValue).map(nativeCreatedThreadIDs.contains) == true),
            method == "turn/started" || method == "turn/completed",
@@ -2987,7 +3015,9 @@ actor CodexRemoteVoiceTransport {
             sdpAnswer = sdp
             await resolveReadinessIfComplete()
         case "thread/realtime/started":
-            await recordUsage("session.started")
+            usageMeasurement.realtimeStarted(
+                at: ProcessInfo.processInfo.systemUptime
+            )
             serverStarted = true
             realtimeClosed = false
             if state != .startOutcomeUnknown {
@@ -2996,6 +3026,7 @@ actor CodexRemoteVoiceTransport {
             await resolveReadinessIfComplete()
             publish()
         case "thread/realtime/error":
+            let usageSummaries = takeUsageDiagnostics(clean: false)
             let error = CodexRemoteVoiceError.realtimeFailed(
                 Self.safeDetail(
                     params["message"]?.stringValue,
@@ -3010,6 +3041,7 @@ actor CodexRemoteVoiceTransport {
             guardTask = nil
             await readiness?.resolve(.failure(error))
             publish()
+            await persistUsageDiagnostics(usageSummaries)
         case "thread/realtime/transcript/delta":
             usageMeasurement.increment("transcript.delta")
             guard let role = params["role"]?.stringValue,
@@ -3027,11 +3059,14 @@ actor CodexRemoteVoiceTransport {
                 )
             )
         case "thread/realtime/transcript/done":
-            usageMeasurement.increment("transcript.done")
-            guard let role = params["role"]?.stringValue,
-                  let text = params["text"]?.stringValue,
-                  (role == "user" || role == "assistant"),
-                  text.utf8.count <= 16_384
+            let role = params["role"]?.stringValue
+            let text = params["text"]?.stringValue
+            guard usageMeasurement.recordFinalTranscriptPart(
+                role: role,
+                text: text
+            ),
+                  let role,
+                  let text
             else {
                 return
             }
@@ -3043,12 +3078,8 @@ actor CodexRemoteVoiceTransport {
                 )
             )
         default:
-            await recordUsage("session.closed")
-            for event in ["transcript.delta", "transcript.done", "rpc.attempted.thread/realtime/start", "rpc.attempted.turn/start", "source.turn/started", "source.turn/completed", "created.turn/started", "created.turn/completed"] {
-                await NightBloodCarPlayDiagnostics.record(
-                    "voice.measure." + event, detail: usageMeasurement.summary(for: event)
-                )
-            }
+            usageMeasurement.increment("session.closed")
+            let usageSummaries = takeUsageDiagnostics(clean: stopAttempted)
             realtimeClosed = true
             backingTurnID = nil
             serverStarted = false
@@ -3061,6 +3092,7 @@ actor CodexRemoteVoiceTransport {
             await readiness?.resolve(.failure(error))
             await closedSignal?.resolve(.success(()))
             publish()
+            await persistUsageDiagnostics(usageSummaries)
         }
     }
 
@@ -3104,6 +3136,8 @@ actor CodexRemoteVoiceTransport {
         preserveState: Bool,
         sendClientClosed: Bool = true
     ) async {
+        let usageSummaries = realtimeStartRequestBegan && !realtimeClosed
+            ? takeUsageDiagnostics(clean: false) : nil
         desktopReady = false
         desktopProcessID = nil
         desktopTaskID = nil
@@ -3138,6 +3172,7 @@ actor CodexRemoteVoiceTransport {
             if let activeReader {
                 await activeReader.value
             }
+            await persistUsageDiagnostics(usageSummaries)
             return
         }
         closing = true
@@ -3205,6 +3240,7 @@ actor CodexRemoteVoiceTransport {
         await failAllWaiters(with: .transportClosed)
         publish()
         finishObservers()
+        await persistUsageDiagnostics(usageSummaries)
     }
 
     /// Connect may be suspended in native authentication or WebSocket
@@ -3419,32 +3455,5 @@ actor CodexRemoteVoiceTransport {
         default:
             false
         }
-    }
-}
-
-/// Counts protocol evidence, never transcript content. IDs stay in memory only.
-/// Notifications can be replayed: raw observations and unique turns differ.
-struct CodexVoiceUsageMeasurement {
-    private var counts: [String: Int] = [:]
-    private var identifiers: [String: Set<String>] = [:]
-    private var saturated: Set<String> = []
-    private let startedAt = Date()
-    private let sample = UUID().uuidString.prefix(8)
-    private let identifierLimit = 4096
-
-    mutating func increment(_ event: String, uniqueID: String? = nil) {
-        counts[event, default: 0] += 1
-        guard let uniqueID else { return }
-        if identifiers[event, default: []].contains(uniqueID) { return }
-        guard identifiers[event, default: []].count < identifierLimit else {
-            saturated.insert(event)
-            return
-        }
-        identifiers[event, default: []].insert(uniqueID)
-    }
-
-    func summary(for event: String) -> String {
-        "sample=\(sample) observed=\(counts[event, default: 0]) unique=\(identifiers[event]?.count ?? 0) "
-            + "capped=\(saturated.contains(event)) elapsedMs=\(Int(Date().timeIntervalSince(startedAt) * 1000))"
     }
 }
