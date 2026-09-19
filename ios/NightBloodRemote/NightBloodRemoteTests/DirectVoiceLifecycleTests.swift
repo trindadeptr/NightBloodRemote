@@ -4,6 +4,234 @@ import SwiftUI
 
 final class DirectVoiceLifecycleTests: XCTestCase {
     @MainActor
+    func testConfirmedEnvironment401RequiresExplicitAuthenticationRecovery() async throws {
+        let fixture = PairingRecoveryFixture(environmentStatusCodes: [401])
+        let setup = fixture.makeSetup()
+        let voice = DirectVoiceSessionModel(
+            liveActivityPublisher: RecordingLiveActivityPublisher()
+        )
+        voice.taskReference = "11111111-1111-4111-8111-111111111111"
+
+        setup.refreshPersistedState()
+        try await waitForSetup(setup, phase: .signInRefreshRequired)
+
+        XCTAssertFalse(setup.isVoiceReady)
+        XCTAssertNil(setup.selectedEnvironmentID)
+        XCTAssertEqual(voice.taskReference, "11111111-1111-4111-8111-111111111111")
+        let record = try await fixture.store.load(
+            accountUserID: "test-user", clientID: "test-client"
+        )
+        XCTAssertEqual(record?.state, .confirmed)
+        XCTAssertEqual(record?.confirmedEnvironmentID, "old-mac")
+        let environmentGets = await fixture.transport.environmentGets
+        let pairingPosts = await fixture.transport.pairingPosts
+        let refreshes = await fixture.oauth.refreshes
+        let signIns = await fixture.oauth.signIns
+        let enrolments = await fixture.enrolment.enrolments
+        XCTAssertEqual(environmentGets, 1)
+        XCTAssertEqual(pairingPosts, 0)
+        XCTAssertEqual(refreshes, 0)
+        XCTAssertEqual(signIns, 0)
+        XCTAssertEqual(enrolments, 0)
+    }
+
+    @MainActor
+    func testExplicitRefreshRestoresSameSavedOfflineEnvironment() async throws {
+        let fixture = PairingRecoveryFixture(environmentStatusCodes: [401, 200])
+        let setup = fixture.makeSetup()
+        setup.refreshPersistedState()
+        try await waitForSetup(setup, phase: .signInRefreshRequired)
+
+        setup.refreshSignIn()
+        try await waitForSetup(setup, phase: .selectedEnvironmentUnavailable)
+
+        XCTAssertEqual(setup.selectedEnvironmentID, "old-mac")
+        let refreshes = await fixture.oauth.refreshes
+        let environmentGets = await fixture.transport.environmentGets
+        let pairingPosts = await fixture.transport.pairingPosts
+        let enrolments = await fixture.enrolment.enrolments
+        XCTAssertEqual(refreshes, 1)
+        XCTAssertEqual(environmentGets, 2)
+        XCTAssertEqual(pairingPosts, 0)
+        XCTAssertEqual(enrolments, 0)
+        let record = try await fixture.store.load(
+            accountUserID: "test-user", clientID: "test-client"
+        )
+        XCTAssertEqual(record?.confirmedEnvironmentID, "old-mac")
+    }
+
+    @MainActor
+    func testRepeated401UsesExactlyOneRefreshPerGesture() async throws {
+        let fixture = PairingRecoveryFixture(
+            environmentStatusCodes: [401, 401, 401]
+        )
+        let setup = fixture.makeSetup()
+        setup.refreshPersistedState()
+        try await waitForSetup(setup, phase: .signInRefreshRequired)
+
+        setup.refreshSignIn()
+        try await waitForSetup(setup, phase: .signInRefreshRequired)
+        var refreshes = await fixture.oauth.refreshes
+        var environmentGets = await fixture.transport.environmentGets
+        XCTAssertEqual(refreshes, 1)
+        XCTAssertEqual(environmentGets, 2)
+
+        setup.refreshSignIn()
+        try await waitForSetup(setup, phase: .signInRefreshRequired)
+        refreshes = await fixture.oauth.refreshes
+        environmentGets = await fixture.transport.environmentGets
+        let pairingPosts = await fixture.transport.pairingPosts
+        XCTAssertEqual(refreshes, 2)
+        XCTAssertEqual(environmentGets, 3)
+        XCTAssertEqual(pairingPosts, 0)
+    }
+
+    @MainActor
+    func testRefreshFailureAndUnavailableBrowserRemainActionable() async throws {
+        let fixture = PairingRecoveryFixture(
+            environmentStatusCodes: [401],
+            refreshFailure: .tokenEndpointRejected(statusCode: 401)
+        )
+        let setup = fixture.makeSetup()
+        setup.refreshPersistedState()
+        try await waitForSetup(setup, phase: .signInRefreshRequired)
+
+        setup.refreshSignIn()
+        try await waitForSetup(setup, phase: .signInRefreshRequired)
+        let refreshes = await fixture.oauth.refreshes
+        var environmentGets = await fixture.transport.environmentGets
+        XCTAssertEqual(refreshes, 1)
+        XCTAssertEqual(environmentGets, 1)
+
+        setup.signIn()
+        XCTAssertEqual(setup.phase, .signInRefreshRequired)
+        XCTAssertFalse(setup.isBusy)
+        let signIns = await fixture.oauth.signIns
+        environmentGets = await fixture.transport.environmentGets
+        let pairingPosts = await fixture.transport.pairingPosts
+        XCTAssertEqual(signIns, 0)
+        XCTAssertEqual(environmentGets, 1)
+        XCTAssertEqual(pairingPosts, 0)
+    }
+
+    @MainActor
+    func testConfirmedEnvironmentNon401RemainsOrdinaryFailure() async throws {
+        for statusCode in [403, 500] {
+            let fixture = PairingRecoveryFixture(
+                environmentStatusCodes: [statusCode]
+            )
+            let setup = fixture.makeSetup()
+            setup.refreshPersistedState()
+            try await waitForSetup(setup, phase: .failed)
+            let environmentGets = await fixture.transport.environmentGets
+            let refreshes = await fixture.oauth.refreshes
+            let signIns = await fixture.oauth.signIns
+            XCTAssertEqual(environmentGets, 1)
+            XCTAssertEqual(refreshes, 0)
+            XCTAssertEqual(signIns, 0)
+            let record = try await fixture.store.load(
+                accountUserID: "test-user", clientID: "test-client"
+            )
+            XCTAssertEqual(record?.confirmedEnvironmentID, "old-mac")
+        }
+    }
+
+    @MainActor
+    func testRefreshedDifferentAccountRequiresEnrolmentReviewBeforeLookup() async throws {
+        let fixture = PairingRecoveryFixture(
+            environmentStatusCodes: [401, 200],
+            refreshedUserID: "different-user"
+        )
+        let setup = fixture.makeSetup()
+        setup.refreshPersistedState()
+        try await waitForSetup(setup, phase: .signInRefreshRequired)
+
+        setup.refreshSignIn()
+        try await waitForSetup(setup, phase: .enrolmentReviewRequired)
+
+        let refreshes = await fixture.oauth.refreshes
+        let environmentGets = await fixture.transport.environmentGets
+        XCTAssertEqual(refreshes, 1)
+        XCTAssertEqual(environmentGets, 1)
+        XCTAssertFalse(setup.isVoiceReady)
+        let record = try await fixture.store.load(
+            accountUserID: "test-user", clientID: "test-client"
+        )
+        XCTAssertEqual(record?.confirmedEnvironmentID, "old-mac")
+    }
+
+    @MainActor
+    func testUnknownPairingOutcomeNeverStartsAuthenticationRecovery() async throws {
+        let fixture = PairingRecoveryFixture(
+            state: .outcomeUnknown,
+            environmentStatusCodes: [401]
+        )
+        let setup = fixture.makeSetup()
+        setup.refreshPersistedState()
+        try await waitForSetup(setup, phase: .pairingOutcomeUnknown)
+
+        let environmentGets = await fixture.transport.environmentGets
+        let refreshes = await fixture.oauth.refreshes
+        let signIns = await fixture.oauth.signIns
+        let pairingPosts = await fixture.transport.pairingPosts
+        XCTAssertEqual(environmentGets, 0)
+        XCTAssertEqual(refreshes, 0)
+        XCTAssertEqual(signIns, 0)
+        XCTAssertEqual(pairingPosts, 0)
+        let record = try await fixture.store.load(
+            accountUserID: "test-user", clientID: "test-client"
+        )
+        XCTAssertEqual(record?.state, .outcomeUnknown)
+    }
+
+    @MainActor
+    func testCancellingSuspendedRecoveryDoesNotRetryOrRelookup() async throws {
+        let fixture = PairingRecoveryFixture(
+            environmentStatusCodes: [401, 200],
+            suspendRefresh: true
+        )
+        let setup = fixture.makeSetup()
+        setup.refreshPersistedState()
+        try await waitForSetup(setup, phase: .signInRefreshRequired)
+
+        setup.refreshSignIn()
+        for _ in 0..<200 {
+            if await fixture.oauth.refreshes == 1 { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        setup.cancelCurrentOperation()
+        try await waitForSetup(setup, phase: .signInRefreshRequired)
+
+        var refreshes = await fixture.oauth.refreshes
+        var environmentGets = await fixture.transport.environmentGets
+        let pairingPosts = await fixture.transport.pairingPosts
+        XCTAssertEqual(refreshes, 1)
+        XCTAssertEqual(environmentGets, 1)
+        XCTAssertEqual(pairingPosts, 0)
+
+        let backgroundFixture = PairingRecoveryFixture(
+            environmentStatusCodes: [401, 200],
+            suspendRefresh: true
+        )
+        let backgroundSetup = backgroundFixture.makeSetup()
+        backgroundSetup.refreshPersistedState()
+        try await waitForSetup(backgroundSetup, phase: .signInRefreshRequired)
+        backgroundSetup.refreshSignIn()
+        for _ in 0..<200 {
+            if await backgroundFixture.oauth.refreshes == 1 { break }
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        backgroundSetup.applicationDidEnterBackground()
+        try await waitForSetup(backgroundSetup, phase: .inactive)
+        refreshes = await backgroundFixture.oauth.refreshes
+        environmentGets = await backgroundFixture.transport.environmentGets
+        let backgroundPosts = await backgroundFixture.transport.pairingPosts
+        XCTAssertEqual(refreshes, 1)
+        XCTAssertEqual(environmentGets, 1)
+        XCTAssertEqual(backgroundPosts, 0)
+    }
+
+    @MainActor
     func testUnavailableMacCanBeReplacedWithoutSigningInOrEnrollingAgain() async throws {
         let fixture = PairingRecoveryFixture()
         let setup = fixture.makeSetup()
@@ -453,12 +681,24 @@ private actor SettingsOAuthSpy: DirectCodexPlanOAuthServing {
 }
 
 private struct PairingRecoveryFixture {
-    let oauth = RecoveryOAuth()
+    let oauth: RecoveryOAuth
     let enrolment = RecoveryEnrolment()
-    let transport = RecoveryTransport()
+    let transport: RecoveryTransport
     let store: RecoveryPairingStore
 
-    init(state: CodexRemotePairingLifecycleState = .confirmed) {
+    init(
+        state: CodexRemotePairingLifecycleState = .confirmed,
+        environmentStatusCodes: [Int] = [200],
+        refreshFailure: CodexPlanOAuthError? = nil,
+        refreshedUserID: String = "test-user",
+        suspendRefresh: Bool = false
+    ) {
+        oauth = RecoveryOAuth(
+            refreshFailure: refreshFailure,
+            refreshedUserID: refreshedUserID,
+            suspendRefresh: suspendRefresh
+        )
+        transport = RecoveryTransport(statusCodes: environmentStatusCodes)
         store = RecoveryPairingStore(state: state)
     }
 
@@ -472,8 +712,30 @@ private struct PairingRecoveryFixture {
 
 private actor RecoveryOAuth: DirectCodexPlanOAuthServing {
     private(set) var signIns = 0
+    private(set) var refreshes = 0
+    private var currentUserID = "test-user"
+    private let refreshFailure: CodexPlanOAuthError?
+    private let refreshedUserID: String
+    private let suspendRefresh: Bool
+
+    init(
+        refreshFailure: CodexPlanOAuthError? = nil,
+        refreshedUserID: String = "test-user",
+        suspendRefresh: Bool = false
+    ) {
+        self.refreshFailure = refreshFailure
+        self.refreshedUserID = refreshedUserID
+        self.suspendRefresh = suspendRefresh
+    }
+
     func storedTokens() async throws -> CodexPlanTokens? {
-        let payload = Data(#"{"exp":4000000000,"https://api.openai.com/auth":{"chatgpt_account_id":"test-account","chatgpt_account_user_id":"test-user"}}"#.utf8)
+        Self.tokens(userID: currentUserID)
+    }
+
+    private static func tokens(userID: String) -> CodexPlanTokens {
+        let payload = Data("""
+        {"exp":4000000000,"https://api.openai.com/auth":{"chatgpt_account_id":"test-account","chatgpt_account_user_id":"\(userID)"}}
+        """.utf8)
             .base64EncodedString().replacingOccurrences(of: "=", with: "")
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
@@ -483,7 +745,15 @@ private actor RecoveryOAuth: DirectCodexPlanOAuthServing {
         signIns += 1
         throw CancellationError()
     }
-    func refreshStoredTokens() async throws -> CodexPlanTokens { throw CancellationError() }
+    func refreshStoredTokens() async throws -> CodexPlanTokens {
+        refreshes += 1
+        if suspendRefresh {
+            try await Task.sleep(for: .seconds(30))
+        }
+        if let refreshFailure { throw refreshFailure }
+        currentUserID = refreshedUserID
+        return Self.tokens(userID: currentUserID)
+    }
     func cancel() async {}
 }
 
@@ -505,15 +775,27 @@ private actor RecoveryEnrolment: DirectCodexRemoteEnrolling {
 
 private actor RecoveryTransport: CodexRemoteHTTPTransport {
     private(set) var pairingPosts = 0
+    private(set) var environmentGets = 0
+    private let statusCodes: [Int]
+
+    init(statusCodes: [Int] = [200]) {
+        self.statusCodes = statusCodes.isEmpty ? [200] : statusCodes
+    }
+
     func send(_ request: CodexRemoteHTTPRequest) async throws -> CodexRemoteHTTPResponse {
         if request.method == .post {
             pairingPosts += 1
             return .init(statusCode: 200, body: Data(#"{"client_id":"test-client","env_id":"new-mac"}"#.utf8))
         }
+        let statusCode = statusCodes[min(environmentGets, statusCodes.count - 1)]
+        environmentGets += 1
+        guard statusCode == 200 else {
+            return .init(statusCode: statusCode, body: Data())
+        }
         let json = pairingPosts == 0
             ? #"{"items":[{"env_id":"old-mac","online":false}]}"#
             : #"{"items":[{"env_id":"old-mac","online":false},{"env_id":"new-mac","online":true}]}"#
-        return .init(statusCode: 200, body: Data(json.utf8))
+        return .init(statusCode: statusCode, body: Data(json.utf8))
     }
 }
 

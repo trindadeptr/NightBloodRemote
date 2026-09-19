@@ -292,7 +292,7 @@ final class DirectCodexRemoteSetupModel {
             case .signedOut:
                 "This signs in to your ChatGPT plan; it does not pair the Mac."
             case .signInRefreshRequired:
-                "Your saved sign-in exists but its access token needs refreshing."
+                "Refresh your saved sign-in. If that fails, sign in again with the same ChatGPT account used to enrol this iPhone. Your saved pairing is kept."
             case .signingIn, .refreshingSignIn:
                 "Complete the visible browser step and return to NightBlood."
             case .signedIn:
@@ -500,11 +500,16 @@ final class DirectCodexRemoteSetupModel {
     }
 
     func signIn() {
+        let isRecovery = phase == .signInRefreshRequired
         guard let presentation = safariPresentation() else {
-            fail(DirectCodexRemoteSetupError.browserUnavailable)
+            if isRecovery {
+                requireSignInRecovery(DirectCodexRemoteSetupError.browserUnavailable)
+            } else {
+                fail(DirectCodexRemoteSetupError.browserUnavailable)
+            }
             return
         }
-        startOperation(phase: .signingIn) { model in
+        startOperation(phase: .signingIn, recoverSignInOnCancel: isRecovery) { model in
             do {
                 _ = try await model.oauth.signIn(
                     timeout: .seconds(180),
@@ -512,24 +517,43 @@ final class DirectCodexRemoteSetupModel {
                 )
                 await model.reconcilePersistedState()
             } catch let error as CodexPlanOAuthError where error.isCancellation {
-                await model.reconcilePersistedState()
+                if isRecovery {
+                    guard model.acceptsOperationResults else { return }
+                    model.requireSignInRecovery(nil)
+                } else {
+                    await model.reconcilePersistedState()
+                }
             } catch {
                 guard model.acceptsOperationResults else { return }
-                model.fail(error)
+                if isRecovery {
+                    model.requireSignInRecovery(error is CancellationError ? nil : error)
+                } else {
+                    model.fail(error)
+                }
             }
         }
     }
 
     func refreshSignIn() {
-        startOperation(phase: .refreshingSignIn) { model in
+        let isRecovery = phase == .signInRefreshRequired
+        startOperation(phase: .refreshingSignIn, recoverSignInOnCancel: isRecovery) { model in
             do {
                 _ = try await model.oauth.refreshStoredTokens()
                 await model.reconcilePersistedState()
             } catch let error as CodexPlanOAuthError where error.isCancellation {
-                await model.reconcilePersistedState()
+                if isRecovery {
+                    guard model.acceptsOperationResults else { return }
+                    model.requireSignInRecovery(nil)
+                } else {
+                    await model.reconcilePersistedState()
+                }
             } catch {
                 guard model.acceptsOperationResults else { return }
-                model.fail(error)
+                if isRecovery {
+                    model.requireSignInRecovery(error is CancellationError ? nil : error)
+                } else {
+                    model.fail(error)
+                }
             }
         }
     }
@@ -760,6 +784,7 @@ final class DirectCodexRemoteSetupModel {
 
     private func startOperation(
         phase requestedPhase: Phase,
+        recoverSignInOnCancel: Bool = false,
         _ body: @escaping @MainActor @Sendable (
             DirectCodexRemoteSetupModel
         ) async -> Void
@@ -781,7 +806,11 @@ final class DirectCodexRemoteSetupModel {
             await body(self)
             operation = nil
             if phase == .cancelling {
-                phase = applicationActive ? .checking : .inactive
+                if applicationActive && recoverSignInOnCancel {
+                    requireSignInRecovery(nil)
+                } else {
+                    phase = applicationActive ? .checking : .inactive
+                }
             }
         }
     }
@@ -922,7 +951,19 @@ final class DirectCodexRemoteSetupModel {
                 // to be present and online. Never fall back to another Mac,
                 // even when it is the only environment returned.
                 phase = .loadingEnvironments
-                let listing = try await environmentClient.list()
+                let listing: CodexRemoteEnvironmentListing
+                do {
+                    listing = try await environmentClient.list()
+                } catch let error as CodexRemoteControllerError {
+                    guard case .responseRejected(statusCode: 401) = error else {
+                        throw error
+                    }
+                    guard acceptsOperationResults else { return }
+                    // Only this read-only lookup can request auth recovery.
+                    // Never reinterpret or replay a failed setup mutation.
+                    requireSignInRecovery(error)
+                    return
+                }
                 guard acceptsOperationResults else { return }
                 environments = listing.environments
                 try await applyEnvironmentListing(listing)
@@ -980,6 +1021,14 @@ final class DirectCodexRemoteSetupModel {
         } else {
             environments.append(environment)
         }
+    }
+
+    private func requireSignInRecovery(_ error: Error?) {
+        // Durable credentials, enrolment, pairing and task selection are kept.
+        // Reconciliation must rebuild and validate readiness after user auth.
+        clearControllerContext()
+        phase = .signInRefreshRequired
+        errorMessage = error.map(Self.message(for:))
     }
 
     private func clearControllerContext() {

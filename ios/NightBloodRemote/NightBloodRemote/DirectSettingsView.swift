@@ -273,6 +273,7 @@ struct DirectSettingsView: View {
             Button("Sign in to ChatGPT") { setup.signIn() }
         case .signInRefreshRequired:
             Button("Refresh ChatGPT sign-in") { setup.refreshSignIn() }
+            Button("Sign in again to ChatGPT") { setup.signIn() }
         case .signedIn:
             #if targetEnvironment(simulator)
             Text("Controller enrolment requires a physical iPhone with Face ID.")
