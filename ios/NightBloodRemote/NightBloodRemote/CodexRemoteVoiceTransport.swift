@@ -3079,6 +3079,7 @@ actor CodexRemoteVoiceTransport {
             )
         default:
             usageMeasurement.increment("session.closed")
+            let closeDiagnostic = "origin=server nativeStopAttempted=\(stopAttempted)"
             let usageSummaries = takeUsageDiagnostics(clean: stopAttempted)
             realtimeClosed = true
             backingTurnID = nil
@@ -3092,6 +3093,9 @@ actor CodexRemoteVoiceTransport {
             await readiness?.resolve(.failure(error))
             await closedSignal?.resolve(.success(()))
             publish()
+            // Exact-task validation already ran. Never persist free-form
+            // upstream reasons; this reports observation, not inferred cause.
+            await NightBloodCarPlayDiagnostics.record("voice.closed", detail: closeDiagnostic)
             await persistUsageDiagnostics(usageSummaries)
         }
     }

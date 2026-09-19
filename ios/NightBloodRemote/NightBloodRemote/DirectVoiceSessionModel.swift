@@ -1048,18 +1048,37 @@ final class DirectVoiceSessionModel {
         }
     }
 
-    func bridgeStop() async throws {
-        if let stopOperation {
-            try await stopOperation.value
-            return
+    /// Called synchronously at receipt of a trusted web request. Capturing the
+    /// native owner here prevents queued callbacks from targeting later Voice.
+    func beginBridgeStop(
+        from source: any DirectFaceJavaScriptControlling
+    ) throws -> Task<Void, any Error> {
+        guard let transport = voice else {
+            guard state != .outcomeUnknown, !state.isActive else {
+                throw CodexRemoteVoiceError.operationOutcomeUnknown("Stopping Codex Voice")
+            }
+            // A completed old page can acknowledge teardown without touching
+            // a new session. No active or unknown session is called stopped.
+            return Task {}
         }
-        if hasRecentConfirmedStop {
-            return
+        guard source === sessionFace else {
+            throw CodexRemoteVoiceError.voiceNotStarted
         }
-        // Stop is intentionally idempotent. The web view can outlive the
-        // native session during idle cleanup, so an already-closed session is
-        // a successful no-op rather than a user-visible error.
-        return
+        if let stopOperation, stopOperationVoice === transport {
+            return stopOperation
+        }
+        guard state != .outcomeUnknown else {
+            throw CodexRemoteVoiceError.operationOutcomeUnknown("Stopping Codex Voice")
+        }
+        cancelStartupWatchdog()
+        oneShotStartGrant = nil
+        awaitingMediaReady = false
+        conversationWasBackgrounded = false
+        advanceLifecycleGeneration()
+        state = .stopping
+        let operation = beginStop(for: transport)
+        NightBloodCarPlayDiagnostics.record("voice.stop.web", detail: "owner=accepted")
+        return operation
     }
 
     func applicationDidEnterBackground() {
@@ -1191,6 +1210,9 @@ final class DirectVoiceSessionModel {
                 if firstReady { showReadyFlash() }
                 lastError = nil
             } else if eventState == "error" {
+                // A web acknowledgement cannot turn an uncertain native Stop
+                // into a retryable failure or authorize another conversation.
+                guard state != .outcomeUnknown else { return }
                 cancelStartupWatchdog()
                 let detail = (message["detail"] as? String)?.prefix(512)
                 let failure = detail.map(String.init)
@@ -1220,6 +1242,10 @@ final class DirectVoiceSessionModel {
                 print("NightBloodBackground event=\(kind) detail=\(detail)")
             }
             #endif
+            if ["idle-stop-started", "idle-stop-completed", "idle-stop-failed"].contains(kind) {
+                // Persist only the fixed event name, never arbitrary web detail.
+                NightBloodCarPlayDiagnostics.record("voice." + kind)
+            }
             if ["speech-started", "speech-stopped", "assistant-speaking", "assistant-done"].contains(kind) {
                 tracePerformance(kind)
             }

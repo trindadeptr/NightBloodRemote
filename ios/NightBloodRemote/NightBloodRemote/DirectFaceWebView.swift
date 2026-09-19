@@ -189,17 +189,20 @@ struct DirectFaceWebView: UIViewRepresentable {
                     replyHandler(nil, "Invalid Voice stop request.")
                     return
                 }
-                Task { @MainActor [weak self] in
-                    guard let self else {
-                        replyHandler(nil, "NightBlood controller closed.")
-                        return
+                do {
+                    // Bind before creating asynchronous work. The task owns
+                    // this exact transport, not a later current session.
+                    let operation = try model.beginBridgeStop(from: self)
+                    Task { @MainActor in
+                        do {
+                            try await operation.value
+                            replyHandler(["stopped": true], nil)
+                        } catch {
+                            replyHandler(nil, Self.message(for: error))
+                        }
                     }
-                    do {
-                        try await model.bridgeStop()
-                        replyHandler(["stopped": true], nil)
-                    } catch {
-                        replyHandler(nil, Self.message(for: error))
-                    }
+                } catch {
+                    replyHandler(nil, Self.message(for: error))
                 }
             default:
                 replyHandler(nil, "Unsupported NightBlood controller operation.")

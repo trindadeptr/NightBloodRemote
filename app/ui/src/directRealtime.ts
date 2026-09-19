@@ -719,14 +719,25 @@ export class DirectRealtimeVoice {
 
   private async performStop() {
     ++this.generation;
-    await this.closeLocal(false);
+    // Stop microphone delivery immediately, but keep the peer/event channel
+    // alive until native confirms the one protocol Stop attempt.
+    this.stream?.getAudioTracks().forEach((track) => { track.enabled = false; });
+    let failed = false;
+    let failure: unknown;
     try {
       await this.signalling.stop();
-      this.cb.onState("idle");
     } catch (error) {
-      this.cb.onState("error", DirectRealtimeVoice.errorText(error));
-      throw error;
+      failed = true;
+      failure = error;
+    } finally {
+      await this.closeLocal(false);
     }
+    if (!failed) {
+      this.cb.onState("idle");
+      return;
+    }
+    this.cb.onState("error", DirectRealtimeVoice.errorText(failure));
+    throw failure;
   }
 
   private async closeLocal(incrementGeneration: boolean) {

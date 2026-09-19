@@ -10,6 +10,7 @@ import {
   DirectRealtimeVoice,
   type DirectRealtimeStartReply,
 } from "./directRealtime";
+import { DirectIdleStopTimer } from "./directIdleStop";
 import { randomStartupCue } from "./startupCues";
 import "./ios.css";
 
@@ -102,34 +103,18 @@ function FaceApp() {
   }, []);
 
   useEffect(() => {
-    let idleStopTimer: number | null = null;
-    let idleStopInFlight = false;
-    const clearIdleStopTimer = () => {
-      if (idleStopTimer !== null) window.clearTimeout(idleStopTimer);
-      idleStopTimer = null;
-    };
     let realtime: DirectRealtimeVoice;
-    const armIdleStopTimer = () => {
-      clearIdleStopTimer();
-      if (userSpeakingRef.current
-        || assistantSpeakingRef.current
-        || awaitingAssistantRef.current
-        || backingWorkRef.current) return;
-      idleStopTimer = window.setTimeout(() => {
-        idleStopTimer = null;
-        if (idleStopInFlight) return;
-        idleStopInFlight = true;
-        postEvent({ type: "event", kind: "idle-stop-started", detail: { idleSeconds: 15 } });
-        void realtime.stop()
-          .then(() => postEvent({ type: "event", kind: "idle-stop-completed" }))
-          .catch((error: unknown) => {
-            idleStopInFlight = false;
-            postEvent({ type: "event", kind: "idle-stop-failed", detail: {
-              error: error instanceof Error ? error.message : String(error),
-            }});
-          });
-      }, 15_000);
-    };
+    const idleStop = new DirectIdleStopTimer(
+      () => ({
+        sessionEligible: realtime.running,
+        userSpeaking: userSpeakingRef.current,
+        assistantSpeaking: assistantSpeakingRef.current,
+        awaitingAssistant: awaitingAssistantRef.current,
+        backingWork: backingWorkRef.current,
+      }),
+      () => realtime.stop(),
+      ({ kind, detail }) => postEvent({ type: "event", kind, detail }),
+    );
     const syncInteraction = () => {
       if (userSpeakingRef.current) {
         setInteraction("listening");
@@ -153,8 +138,7 @@ function FaceApp() {
     realtime = new DirectRealtimeVoice({
       onState: (state, detail) => {
         if (state === "starting") {
-          clearIdleStopTimer();
-          idleStopInFlight = false;
+          idleStop.reset();
           readyFlashStartedRef.current = null;
           setReadyFlashStartedAtMs(null);
           resetTurnActivity();
@@ -164,19 +148,11 @@ function FaceApp() {
           setConnection("connected");
           syncInteraction();
         } else if (state === "idle") {
-          clearIdleStopTimer();
-          idleStopInFlight = false;
+          idleStop.reset();
           resetTurnActivity();
-          setInteraction("idle");
-        } else if (idleStopInFlight) {
-          // Idle shutdown may race the relay acknowledgement. The local
-          // session is already closed; do not show a transient error for the
-          // automatic cleanup path.
-          clearIdleStopTimer();
-          resetTurnActivity();
-          setConnection("connected");
           setInteraction("idle");
         } else {
+          idleStop.reset();
           resetTurnActivity();
           setConnection("connected");
           setInteraction("idle");
@@ -197,9 +173,11 @@ function FaceApp() {
           const startedAt = performance.now();
           readyFlashStartedRef.current = startedAt;
           setReadyFlashStartedAtMs(startedAt);
-          if (kind === "session-ready") armIdleStopTimer();
+        }
+        if (kind === "session-ready") {
+          idleStop.arm();
         } else if (kind === "speech-started") {
-          clearIdleStopTimer();
+          idleStop.clear();
           userSpeakingRef.current = true;
           assistantSpeakingRef.current = false;
           awaitingAssistantRef.current = false;
@@ -208,13 +186,13 @@ function FaceApp() {
           userSpeakingRef.current = false;
           awaitingAssistantRef.current = true;
           syncInteraction();
-          armIdleStopTimer();
+          idleStop.arm();
         } else if (kind === "delegation-started") {
-          clearIdleStopTimer();
+          idleStop.clear();
           awaitingAssistantRef.current = true;
           syncInteraction();
         } else if (kind === "assistant-speaking") {
-          clearIdleStopTimer();
+          idleStop.clear();
           userSpeakingRef.current = false;
           assistantSpeakingRef.current = true;
           awaitingAssistantRef.current = false;
@@ -223,7 +201,7 @@ function FaceApp() {
           assistantSpeakingRef.current = false;
           awaitingAssistantRef.current = false;
           syncInteraction();
-          armIdleStopTimer();
+          idleStop.arm();
         }
         postEvent({ type: "event", kind, detail });
       },
@@ -256,6 +234,7 @@ function FaceApp() {
       setWorking(active) {
         backingWorkRef.current = active;
         setBackingWorkActive(active);
+        if (active) idleStop.clear();
         // `awaitingAssistant` already bridges App Server completion to the
         // first output-audio event. Do not re-arm it here: if audio has already
         // finished, turn completion must restore the ordinary ivory state.
@@ -276,9 +255,12 @@ function FaceApp() {
         userSpeakingRef.current = false;
         assistantSpeakingRef.current = candidate === "speaking";
         awaitingAssistantRef.current = candidate === "thinking";
+        idleStop.clear();
         setConnection("connected");
         setInteraction(candidate);
-        return realtime.resumeAfterBackground();
+        const resumed = await realtime.resumeAfterBackground();
+        if (resumed && candidate === "listening") idleStop.arm();
+        return resumed;
       },
       setSkin(candidate) {
         const skin = parseFaceSkin(candidate);
@@ -325,7 +307,7 @@ function FaceApp() {
     };
     postEvent({ type: "ready" });
     return () => {
-      clearIdleStopTimer();
+      idleStop.reset();
       delete window.NightBloodDirect;
       void realtime.closeLocalOnly();
     };

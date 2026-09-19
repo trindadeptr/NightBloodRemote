@@ -4,6 +4,63 @@ import SwiftUI
 
 final class DirectVoiceLifecycleTests: XCTestCase {
     @MainActor
+    func testLateWebStopErrorPreservesNativeUncertainty() {
+        let model = DirectVoiceSessionModel(
+            liveActivityPublisher: RecordingLiveActivityPublisher()
+        )
+        model.state = .outcomeUnknown
+        model.lastError = "Native Stop is unconfirmed"
+        model.handleEventMessage(["type": "session", "state": "error",
+                                  "detail": "Web stop failed"])
+        XCTAssertEqual(model.state, .outcomeUnknown)
+        XCTAssertEqual(model.lastError, "Native Stop is unconfirmed")
+        XCTAssertFalse(model.canRetryVoiceConnection)
+    }
+
+    @MainActor
+    func testWebStopCannotConfirmUnknownOrUnownedActiveSession() {
+        let model = DirectVoiceSessionModel(
+            liveActivityPublisher: RecordingLiveActivityPublisher()
+        )
+        let oldFace = AvailabilityRecordingFace()
+        for state in [DirectVoiceSessionState.outcomeUnknown, .connecting,
+                      .listening, .thinking, .speaking, .stopping] {
+            model.state = state
+            XCTAssertThrowsError(try model.beginBridgeStop(from: oldFace))
+            XCTAssertEqual(model.state, state)
+            XCTAssertFalse(model.hasOwnedVoice)
+        }
+    }
+
+    @MainActor
+    func testCompletedWebStopAcknowledgementCannotChangeLaterState() async throws {
+        let model = DirectVoiceSessionModel(
+            liveActivityPublisher: RecordingLiveActivityPublisher()
+        )
+        let oldFace = AvailabilityRecordingFace()
+        model.state = .ready
+        let acknowledgement = try model.beginBridgeStop(from: oldFace)
+        // The queued acknowledgement captures no lookup of a later session.
+        model.state = .listening
+        try await acknowledgement.value
+        XCTAssertEqual(model.state, .listening)
+    }
+
+    @MainActor
+    func testIdleDiagnosticsNeverPersistWebDetails() {
+        let model = DirectVoiceSessionModel(
+            liveActivityPublisher: RecordingLiveActivityPublisher()
+        )
+        model.handleEventMessage([
+            "type": "event", "kind": "idle-stop-failed",
+            "detail": ["error": "private-web-stop-detail-sentinel"]
+        ])
+        let trace = NightBloodCarPlayDiagnostics.renderedTrace()
+        XCTAssertTrue(trace.contains("voice.idle-stop-failed"))
+        XCTAssertFalse(trace.contains("private-web-stop-detail-sentinel"))
+    }
+
+    @MainActor
     func testConfirmedEnvironment401RequiresExplicitAuthenticationRecovery() async throws {
         let fixture = PairingRecoveryFixture(environmentStatusCodes: [401])
         let setup = fixture.makeSetup()

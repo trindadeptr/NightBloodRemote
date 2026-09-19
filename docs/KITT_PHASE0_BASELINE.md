@@ -276,3 +276,20 @@ Keep the gate pending until all of the following exist:
 The pending gate blocks claims of savings and any default routing change. It
 does not block the isolated implementation and test work that prepares the
 measurement contract.
+
+## First physical observations and build 31 follow-up
+
+The owner confirmed authentication recovery with build 30. Two iPhone sessions
+recorded approximately 67.4 and 77.0 seconds of realtime-open exposure, each
+with one unique observed source turn and one realtime-start attempt. Both
+closed as interrupted; no native realtime-stop attempt was observed. These are
+partial diagnostic samples, not completed benchmark runs or billed audio.
+
+Inspection found WebView idle shutdown closed media before native signalling,
+and the native bridge could acknowledge Stop without owning an actual stop.
+The idle timer also failed to recheck activity. Build 31 repairs these paths,
+keeps unknown outcomes non-retryable, records fixed diagnostic markers and uses
+the owner's requested 30-second idle timeout. It passed 99 Swift tests and
+focused web tests, was installed in place and launched on the iPhone 15 Plus.
+Physical idle/active-work/Stop retesting remains pending; these defects are a
+plausible explanation, not proof of every observed audio interruption.
