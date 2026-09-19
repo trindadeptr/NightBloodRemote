@@ -1,0 +1,48 @@
+schema: spec-driven
+
+context: |
+  KITT / NightBloodRemote is a native Swift iPhone and CarPlay client with a bundled web UI.
+  Read AGENTS.md, CONTRIBUTING.md, docs/SETUP.md and docs/CONNECTIONS.md before work.
+  Preserve the working phone app, pairing, selected task and host, effective permissions,
+  approval policy, sandbox, local Apple signing and all unrelated changes. Generated Xcode
+  project regeneration overwrites local signing; use a disposable build copy when possible.
+  Native Swift owns credentials and task/host identity. Keep exact binding, deterministic
+  validation and at-most-once mutation semantics; unknown outcomes must not be retried.
+  Never persist transcripts, credentials, real task/host/account identifiers or private paths
+  for metrics. Prefer bounded aggregate diagnostics and synthetic bilingual fixtures.
+  Measure before optimizing. Execution direction is native -> Apple -> GPT Live -> Codex,
+  but current Voice remains authoritative until physical iPhone and CarPlay gates pass.
+  Simulator success does not prove audio, pairing or CarPlay. Missing data is unavailable,
+  not zero. Connected time is not billed cloud audio. Do not claim savings without baseline.
+  Code and technical documentation use English; user-facing Portuguese uses pt-PT.
+
+# Project context (optional)
+# This is shown to AI when creating artifacts.
+# Add your tech stack, conventions, style guides, domain knowledge, etc.
+# Example:
+#   context: |
+#     Tech stack: TypeScript, React, Node.js
+#     We use conventional commits
+#     Domain: e-commerce platform
+
+# Per-artifact rules (optional)
+# Add custom rules for specific artifacts.
+# Example:
+#   rules:
+#     proposal:
+#       - Keep proposals under 500 words
+#       - Always include a "Non-goals" section
+#     tasks:
+#       - Break tasks into chunks of max 2 hours
+
+# Per-operation guidance (optional)
+# Add advisory guidance for how apply and archive work should be conducted.
+# This is separate from artifact rules above.
+# Example:
+#   operations:
+#     apply:
+#       guidance:
+#         - Keep test summaries concise
+#     archive:
+#       guidance:
+#         - Summarize the archive outcome before finishing

@@ -1,5 +1,10 @@
 # Helping someone set up NightBlood Remote
 
+For KITT optimization work, also read [Agent model strategy](docs/AGENT_MODEL_STRATEGY.md)
+and the [Phase 0 baseline ledger](docs/KITT_PHASE0_BASELINE.md). The model strategy
+reflects the owner's Pro upgrade; it does not authorize changing the selected
+voice task's model, permissions or working device setup.
+
 Read [Setup](docs/SETUP.md), [Connections](docs/CONNECTIONS.md) and the
 [16 September setup lessons](docs/SETUP_LESSONS_2026-09-16.md) first. Follow this
 order and report the actual stage reached. A successful build, login or Mac
