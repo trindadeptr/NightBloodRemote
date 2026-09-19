@@ -1,3 +1,8 @@
+> Continuation: the owner subsequently requested removal of automatic silence
+> shutdown. The inactivity requirement below records build31's historical scope;
+> `voice-connection-continuity` supersedes it for build33. Native sole Stop
+> ownership and unknown-outcome protections remain applicable.
+
 ## Context
 
 JavaScript performStop closes media before signalling.stop; native bridgeStop currently returns without beginning a stop when no owner exists. The 15-second idle timer does not recheck activity at expiry, and setWorking(true) does not cancel it. These are concrete code defects. They can explain silent local teardown, but the physical trace does not establish that they caused every observed interruption.

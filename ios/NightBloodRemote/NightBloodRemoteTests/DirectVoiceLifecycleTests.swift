@@ -47,20 +47,6 @@ final class DirectVoiceLifecycleTests: XCTestCase {
     }
 
     @MainActor
-    func testIdleDiagnosticsNeverPersistWebDetails() {
-        let model = DirectVoiceSessionModel(
-            liveActivityPublisher: RecordingLiveActivityPublisher()
-        )
-        model.handleEventMessage([
-            "type": "event", "kind": "idle-stop-failed",
-            "detail": ["error": "private-web-stop-detail-sentinel"]
-        ])
-        let trace = NightBloodCarPlayDiagnostics.renderedTrace()
-        XCTAssertTrue(trace.contains("voice.idle-stop-failed"))
-        XCTAssertFalse(trace.contains("private-web-stop-detail-sentinel"))
-    }
-
-    @MainActor
     func testConfirmedEnvironment401RequiresExplicitAuthenticationRecovery() async throws {
         let fixture = PairingRecoveryFixture(environmentStatusCodes: [401])
         let setup = fixture.makeSetup()

@@ -337,4 +337,86 @@ final class CodexVoiceUsageMeasurementTests: XCTestCase {
         XCTAssertFalse(output.description.contains("private-source-id"))
         XCTAssertFalse(output.description.contains("private-created-id"))
     }
+
+    func testTransportFailureDiagnosticUsesFixedBoundedMatrix() {
+        let sentinel = "private-error-path-account-and-payload"
+        let cases: [(CodexRemoteVoiceError, CodexRemoteVoiceFailureCategory)] = [
+            (.applicationNotActive, .applicationState),
+            (.invalidEnvironment, .invalidConfiguration),
+            (.alreadyConnected, .lifecycle),
+            (.transportClosed, .transportClosed),
+            (.connectionFailed, .connectionFailed),
+            (.desktopTranscriptSetupFailed(.commandFailed), .desktopTranscript),
+            (.oversizedWebSocketFrame, .oversizedFrame),
+            (.malformedRemoteMessage, .malformedMessage),
+            (.streamIdentityMismatch(field: sentinel), .identityMismatch),
+            (.invalidSequence, .invalidSequence),
+            (.invalidChunk, .invalidChunk),
+            (.unsupportedAppServerMethod(sentinel), .unsupportedMethod),
+            (.appServerRejected(sentinel), .appServerRejected),
+            (.realtimeFailed(sentinel), .realtimeFailed),
+            (.realtimeClosedBeforeReady, .realtimeClosed),
+            (.invalidAttestation, .attestation),
+            (.operationOutcomeUnknown(sentinel), .outcomeUnknown),
+            (.realtimeInterruptionOutcomeUnknown, .outcomeUnknown),
+            (.cancelled, .cancelled),
+        ]
+
+        for origin in CodexRemoteVoiceFailureOrigin.allCases {
+            for (error, expectedCategory) in cases {
+                let diagnostic = CodexRemoteVoiceFailureDiagnostic(
+                    origin: origin,
+                    error: error,
+                    serverStarted: true,
+                    stopAttempted: false,
+                    realtimeClosed: false
+                )
+                XCTAssertEqual(diagnostic.category, expectedCategory)
+                XCTAssertTrue(diagnostic.detail.contains("origin=\(origin.rawValue)"))
+                XCTAssertTrue(diagnostic.detail.contains("serverStarted=true"))
+                XCTAssertTrue(diagnostic.detail.contains("stopAttempted=false"))
+                XCTAssertTrue(diagnostic.detail.contains("realtimeClosed=false"))
+                XCTAssertLessThanOrEqual(
+                    diagnostic.detail.count,
+                    CodexRemoteVoiceFailureDiagnostic.maximumDetailCharacters
+                )
+                XCTAssertFalse(diagnostic.detail.contains(sentinel))
+            }
+        }
+    }
+
+    func testHeartbeatDiagnosticOnlyClaimsThePrimaryOpenBoundary() {
+        XCTAssertTrue(CodexRemoteVoiceFailureDiagnostic
+            .shouldRecordHeartbeatFailure(
+                closing: false,
+                transportClosed: false
+            ))
+        for (closing, transportClosed) in [
+            (true, false),
+            (false, true),
+            (true, true),
+        ] {
+            XCTAssertFalse(CodexRemoteVoiceFailureDiagnostic
+                .shouldRecordHeartbeatFailure(
+                    closing: closing,
+                    transportClosed: transportClosed
+                ))
+        }
+    }
+
+    @MainActor
+    func testEstablishedInterruptionStaysUnknownAndCannotOfferRetry() {
+        let error = CodexRemoteVoiceError.realtimeInterruptionOutcomeUnknown
+        XCTAssertTrue(error.isOutcomeUnknown)
+        XCTAssertEqual(
+            error.localizedDescription,
+            "Voice was interrupted; remote closure could not be confirmed. It will not be retried automatically."
+        )
+
+        let model = DirectVoiceSessionModel()
+        model.state = .outcomeUnknown
+        XCTAssertFalse(model.canRetryVoiceConnection)
+        model.authoriseAndStartFromUserGesture()
+        XCTAssertEqual(model.state, .outcomeUnknown)
+    }
 }

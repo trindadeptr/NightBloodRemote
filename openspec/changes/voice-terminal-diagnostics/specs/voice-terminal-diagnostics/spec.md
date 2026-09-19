@@ -1,3 +1,8 @@
+> Continuation: the owner subsequently requested removal of automatic silence
+> shutdown. The inactivity requirement below records build31's historical scope;
+> `voice-connection-continuity` supersedes it for build33. Native sole Stop
+> ownership and unknown-outcome protections remain applicable.
+
 ## Purpose
 
 Keep native sole ownership of Voice Stop synchronized with local media and prevent obsolete idle timers from ending an active conversation.

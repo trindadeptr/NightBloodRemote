@@ -10,7 +10,6 @@ import {
   DirectRealtimeVoice,
   type DirectRealtimeStartReply,
 } from "./directRealtime";
-import { DirectIdleStopTimer } from "./directIdleStop";
 import { randomStartupCue } from "./startupCues";
 import "./ios.css";
 
@@ -104,17 +103,6 @@ function FaceApp() {
 
   useEffect(() => {
     let realtime: DirectRealtimeVoice;
-    const idleStop = new DirectIdleStopTimer(
-      () => ({
-        sessionEligible: realtime.running,
-        userSpeaking: userSpeakingRef.current,
-        assistantSpeaking: assistantSpeakingRef.current,
-        awaitingAssistant: awaitingAssistantRef.current,
-        backingWork: backingWorkRef.current,
-      }),
-      () => realtime.stop(),
-      ({ kind, detail }) => postEvent({ type: "event", kind, detail }),
-    );
     const syncInteraction = () => {
       if (userSpeakingRef.current) {
         setInteraction("listening");
@@ -138,7 +126,6 @@ function FaceApp() {
     realtime = new DirectRealtimeVoice({
       onState: (state, detail) => {
         if (state === "starting") {
-          idleStop.reset();
           readyFlashStartedRef.current = null;
           setReadyFlashStartedAtMs(null);
           resetTurnActivity();
@@ -148,11 +135,9 @@ function FaceApp() {
           setConnection("connected");
           syncInteraction();
         } else if (state === "idle") {
-          idleStop.reset();
           resetTurnActivity();
           setInteraction("idle");
         } else {
-          idleStop.reset();
           resetTurnActivity();
           setConnection("connected");
           setInteraction("idle");
@@ -174,10 +159,7 @@ function FaceApp() {
           readyFlashStartedRef.current = startedAt;
           setReadyFlashStartedAtMs(startedAt);
         }
-        if (kind === "session-ready") {
-          idleStop.arm();
-        } else if (kind === "speech-started") {
-          idleStop.clear();
+        if (kind === "speech-started") {
           userSpeakingRef.current = true;
           assistantSpeakingRef.current = false;
           awaitingAssistantRef.current = false;
@@ -186,13 +168,10 @@ function FaceApp() {
           userSpeakingRef.current = false;
           awaitingAssistantRef.current = true;
           syncInteraction();
-          idleStop.arm();
         } else if (kind === "delegation-started") {
-          idleStop.clear();
           awaitingAssistantRef.current = true;
           syncInteraction();
         } else if (kind === "assistant-speaking") {
-          idleStop.clear();
           userSpeakingRef.current = false;
           assistantSpeakingRef.current = true;
           awaitingAssistantRef.current = false;
@@ -201,7 +180,6 @@ function FaceApp() {
           assistantSpeakingRef.current = false;
           awaitingAssistantRef.current = false;
           syncInteraction();
-          idleStop.arm();
         }
         postEvent({ type: "event", kind, detail });
       },
@@ -234,7 +212,6 @@ function FaceApp() {
       setWorking(active) {
         backingWorkRef.current = active;
         setBackingWorkActive(active);
-        if (active) idleStop.clear();
         // `awaitingAssistant` already bridges App Server completion to the
         // first output-audio event. Do not re-arm it here: if audio has already
         // finished, turn completion must restore the ordinary ivory state.
@@ -255,12 +232,9 @@ function FaceApp() {
         userSpeakingRef.current = false;
         assistantSpeakingRef.current = candidate === "speaking";
         awaitingAssistantRef.current = candidate === "thinking";
-        idleStop.clear();
         setConnection("connected");
         setInteraction(candidate);
-        const resumed = await realtime.resumeAfterBackground();
-        if (resumed && candidate === "listening") idleStop.arm();
-        return resumed;
+        return realtime.resumeAfterBackground();
       },
       setSkin(candidate) {
         const skin = parseFaceSkin(candidate);
@@ -307,7 +281,6 @@ function FaceApp() {
     };
     postEvent({ type: "ready" });
     return () => {
-      idleStop.reset();
       delete window.NightBloodDirect;
       void realtime.closeLocalOnly();
     };

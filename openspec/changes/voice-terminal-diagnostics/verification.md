@@ -49,3 +49,41 @@ explicit Stop remains pending. The full active-native-transport/concurrent-stop
 integration lacks a deterministic fixture; existing owner logic was inspected,
 while JavaScript ordering/concurrency and native unknown-state guards were tested.
 Do not claim all reported interruptions fixed or archive this change yet.
+
+
+## Continuation evidence — 19 September 2026
+
+The clean continuation checkout was `86c3417`. Read-only device inspection
+confirmed build 31 and the original generated signing project checksum remained
+unchanged. Both focused web scripts passed again (`test-direct-idle-stop.mjs`
+and `test-direct-voice-stop.mjs`), as did strict validation of this change.
+The 99-test Swift result above is prior build evidence, not a new run.
+
+A retained terminal aggregate reports a 250,034 ms Realtime-open interval,
+four unique source turns, and server closure following a native Stop attempt.
+One sent and one accepted Stop RPC were retained. The diagnostics ring was
+full; no idle/web-Stop marker for that session was retained, so idle versus
+explicit/native shutdown cannot be attributed. See the Phase 0 ledger for
+aggregate values and token-window limitations. This is not acceptance of
+continuous audio, the 30-second idle boundary, or Stop/restart.
+
+Physical retesting is in progress with the owner. Keep task 2.3 and the full
+active-native-transport fixture portion of 1.1 open. Do not archive the change
+or enable routing optimization from this evidence.
+
+
+Continuation documentation passed `git diff --check` and the public-source
+content checks. `make audit` still exits nonzero only for the previously
+recorded historical author/committer email metadata; history was not changed.
+No runtime source changed, so no new native build or installation was needed.
+
+## Physical retest result
+
+Build 31 failed continuity during the owner's read-only Codex request and
+follow-up. The retained terminal aggregate shows interrupted closure after
+201,372 ms, three completed source turns and no retained idle/native Stop
+marker. The UI displayed Start-outcome-unknown after audible conversation.
+The failure trigger remains unproven; see `voice-connection-continuity` for
+bounded transport evidence work. Task 2.3 remains incomplete, and the owner
+has not completed silence or explicit Stop/restart acceptance. The owner
+clarified that diagnosis precedes the optional removal of inactivity Stop.

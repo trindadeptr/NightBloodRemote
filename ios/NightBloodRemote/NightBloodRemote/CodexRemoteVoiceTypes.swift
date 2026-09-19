@@ -149,6 +149,7 @@ enum CodexRemoteVoiceError: Error, LocalizedError, Sendable, Equatable {
     case appServerRejected(String)
     case realtimeFailed(String)
     case realtimeClosedBeforeReady
+    case realtimeInterruptionOutcomeUnknown
     case attestationUnavailable
     case invalidAttestation
     case operationOutcomeUnknown(String)
@@ -202,6 +203,8 @@ enum CodexRemoteVoiceError: Error, LocalizedError, Sendable, Equatable {
             detail
         case .realtimeClosedBeforeReady:
             "Codex Voice closed before the WebRTC session became ready."
+        case .realtimeInterruptionOutcomeUnknown:
+            "Voice was interrupted; remote closure could not be confirmed. It will not be retried automatically."
         case .attestationUnavailable:
             "DeviceCheck is unavailable on this iPhone."
         case .invalidAttestation:
@@ -214,8 +217,128 @@ enum CodexRemoteVoiceError: Error, LocalizedError, Sendable, Equatable {
     }
 
     var isOutcomeUnknown: Bool {
-        if case .operationOutcomeUnknown = self { return true }
-        return false
+        switch self {
+        case .operationOutcomeUnknown, .realtimeInterruptionOutcomeUnknown:
+            true
+        default:
+            false
+        }
+    }
+}
+
+enum CodexRemoteVoiceFailureOrigin: String, CaseIterable, Sendable {
+    case readerReceive = "reader_receive"
+    case readerFrame = "reader_frame"
+    case heartbeatPongAge = "heartbeat_pong_age"
+    case heartbeatSend = "heartbeat_send"
+    case heartbeatHelperWrite = "heartbeat_helper_write"
+    case localClose = "local_close"
+}
+
+enum CodexRemoteVoiceFailureCategory: String, CaseIterable, Sendable {
+    case applicationState = "application_state"
+    case invalidConfiguration = "invalid_configuration"
+    case lifecycle = "lifecycle"
+    case transportClosed = "transport_closed"
+    case connectionFailed = "connection_failed"
+    case desktopTranscript = "desktop_transcript"
+    case oversizedFrame = "oversized_frame"
+    case malformedMessage = "malformed_message"
+    case identityMismatch = "identity_mismatch"
+    case invalidSequence = "invalid_sequence"
+    case invalidChunk = "invalid_chunk"
+    case unsupportedMethod = "unsupported_method"
+    case appServerRejected = "app_server_rejected"
+    case realtimeFailed = "realtime_failed"
+    case realtimeClosed = "realtime_closed"
+    case attestation = "attestation"
+    case outcomeUnknown = "outcome_unknown"
+    case cancelled
+}
+
+/// A fixed diagnostic classification. It deliberately ignores every error's
+/// associated value so persisted evidence cannot contain upstream text,
+/// identities, payloads or paths.
+struct CodexRemoteVoiceFailureDiagnostic: Equatable, Sendable {
+    static let maximumDetailCharacters = 160
+
+    let origin: CodexRemoteVoiceFailureOrigin
+    let category: CodexRemoteVoiceFailureCategory
+    let serverStarted: Bool
+    let stopAttempted: Bool
+    let realtimeClosed: Bool
+
+    init(
+        origin: CodexRemoteVoiceFailureOrigin,
+        error: CodexRemoteVoiceError,
+        serverStarted: Bool,
+        stopAttempted: Bool,
+        realtimeClosed: Bool
+    ) {
+        self.origin = origin
+        self.category = Self.category(for: error)
+        self.serverStarted = serverStarted
+        self.stopAttempted = stopAttempted
+        self.realtimeClosed = realtimeClosed
+    }
+
+    var detail: String {
+        let value = "origin=\(origin.rawValue) category=\(category.rawValue) "
+            + "serverStarted=\(serverStarted) stopAttempted=\(stopAttempted) "
+            + "realtimeClosed=\(realtimeClosed)"
+        return String(value.prefix(Self.maximumDetailCharacters))
+    }
+
+    static func shouldRecordHeartbeatFailure(
+        closing: Bool,
+        transportClosed: Bool
+    ) -> Bool {
+        !closing && !transportClosed
+    }
+
+    private static func category(
+        for error: CodexRemoteVoiceError
+    ) -> CodexRemoteVoiceFailureCategory {
+        switch error {
+        case .applicationNotActive:
+            .applicationState
+        case .invalidEnvironment, .invalidThreadID, .invalidSDPOffer,
+             .invalidPrompt:
+            .invalidConfiguration
+        case .alreadyConnected, .notConnected, .startAlreadyAttempted,
+             .voiceNotStarted, .stopAlreadyAttempted:
+            .lifecycle
+        case .transportClosed:
+            .transportClosed
+        case .connectionFailed:
+            .connectionFailed
+        case .desktopTranscriptUnavailable, .desktopTranscriptSetupFailed:
+            .desktopTranscript
+        case .oversizedWebSocketFrame:
+            .oversizedFrame
+        case .malformedRemoteMessage:
+            .malformedMessage
+        case .streamIdentityMismatch:
+            .identityMismatch
+        case .invalidSequence:
+            .invalidSequence
+        case .invalidChunk:
+            .invalidChunk
+        case .unsupportedAppServerMethod:
+            .unsupportedMethod
+        case .appServerRejected:
+            .appServerRejected
+        case .realtimeFailed:
+            .realtimeFailed
+        case .realtimeClosedBeforeReady:
+            .realtimeClosed
+        case .attestationUnavailable, .invalidAttestation:
+            .attestation
+        case .operationOutcomeUnknown, .realtimeInterruptionOutcomeUnknown:
+            .outcomeUnknown
+        case .cancelled:
+            .cancelled
+        }
     }
 }
 

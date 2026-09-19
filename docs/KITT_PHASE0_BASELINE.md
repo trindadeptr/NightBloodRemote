@@ -49,7 +49,7 @@ audible Voice remain pending. This does not complete the Phase 0 baseline.
 
 Inspection began from clean source commit `349ecc9` on `setup/simulator-kitt`.
 The tracked app manifest specifies version 1.8.2, build 28. The iPhone 15 Plus
-now has the privately numbered instrumented build 30 described above. Effective
+now has the privately numbered instrumented build 31 described below. Effective
 voice-task configuration has not been independently inspected or changed.
 
 The current path remains the working direct Realtime voice pipeline. There is
@@ -293,3 +293,101 @@ the owner's requested 30-second idle timeout. It passed 99 Swift tests and
 focused web tests, was installed in place and launched on the iPhone 15 Plus.
 Physical idle/active-work/Stop retesting remains pending; these defects are a
 plausible explanation, not proof of every observed audio interruption.
+
+## Build 31 continuation — 19 September 2026
+
+Read-only device inspection confirmed version 1.8.2, build 31. The original
+local signing project still matches its preserved SHA-256. The repository
+started clean at `86c3417` on `setup/simulator-kitt`, matching the locally
+recorded remote-tracking ref. No install, task selection, host, permission,
+voice preference or runtime routing change was made by the agent during this inspection.
+
+A targeted preferences read recovered a complete ten-record terminal aggregate
+for a session ending at 06:33:33 UTC. Only bounded diagnostics were retained in
+ignored private storage; the temporary preferences copy was deleted. The
+80-event ring was full, so absence of earlier lifecycle markers is not proof
+that they never occurred.
+
+| Observation | Value / interpretation |
+| --- | --- |
+| Realtime start attempts | 1 |
+| Explicit app `turn/start` attempts | 0; does not mean no Codex work |
+| Source turns started / completed | 4 unique / 4 unique; raw counts also 4 / 4 |
+| Native-created turns | 0 observed |
+| Realtime-open exposure | 250,034 ms; not audio duration or billing |
+| Closure | `clean`; server close observed after a native Stop attempt |
+| Stop RPC | One sent and one accepted observation retained |
+| Final transcript parts | 9 user / 13 assistant; not true utterance counts |
+| Measurement saturation | `capped=false` |
+| Token evidence | `observedWindow`, selected-source-task cumulative snapshots |
+| Observed token window | 2,528,283 total = 2,525,611 input + 2,672 output |
+| Token subsets | 2,515,968 cached input; 757 reasoning output; 0 cache-write input |
+| Idle/explicit Stop attribution | Unavailable; no corresponding idle/web-Stop marker retained |
+| Audible continuity, language, follow-ups and silence timing | Awaiting owner observation |
+
+The token window can include concurrent selected-task work and excludes work
+before its first snapshot. Cached and reasoning tokens are subsets, not extra
+usage to add. This sample does not establish Voice-only cost, quota usage,
+savings, or the number of spoken requests. A clean closure does not prove the
+30-second idle boundary or successful Stop/restart. CarPlay remains untested
+for this phone-only build; the Phase 0 gate stays pending.
+
+
+The selected task reference changed between the 06:38:24 and 06:39:58 UTC
+read-only snapshots while the owner prepared the test after requesting this
+continuation task's UUID. No phone configuration was written by the agent.
+Keep the earlier aggregate separate from subsequent runs: source-task token
+windows are not comparable across that selection change. Live effective
+permissions were not independently inspected or modified.
+
+## Build 31 physical continuity failure — 19 September 2026, 06:45 UTC
+
+The owner reported normal initial app opening, audible PT-PT/English
+conversation and Ember sounding masculine again. This is a human listening
+observation, not service voice-identity confirmation or an explanation of the
+previous timbre change. During the read-only repository request and branch
+follow-up (acceptance step 2), Voice interrupted again. The screenshot shows
+unknown Start outcome wording even though conversation was already audible.
+Do not count the spoken assertion that both replies arrived complete as
+physical acceptance; the owner's observed interruption takes precedence.
+
+A read-only capture at 06:47:55 UTC confirmed build 31, saved KITT/Ember and a
+complete terminal aggregate. The session had one Realtime start attempt,
+three unique source turns started/completed, 14 user and 17 assistant final
+parts, and 201,372 ms of Realtime-open exposure with `closure=interrupted`.
+Counts were not capped. The selected-task observed token window was 306,471
+(306,316 input + 155 output), including 305,152 cached input; reasoning and
+cache-write subsets were zero. These remain cumulative task-window evidence,
+not Voice-only tokens, utterance counts, account quota or billed audio.
+
+No idle Stop, native Stop RPC or server-close marker for this session was
+retained. Six desktop heartbeat writes were accepted; the last at 06:44:59
+preceded the 06:45:24 failure by about 25 seconds. The next regular heartbeat
+would normally be later. Three source turns completed before failure. This
+argues against an ordinary 30-second idle closure but does not establish the
+transport failure trigger. Pending long-lived command failure at teardown
+must not be treated as proof the helper caused it.
+
+Step 2 fails physical continuity acceptance. Silence timing and explicit
+Stop/restart have not been completed in this run. Phase 0 and routing gates
+remain pending. Follow-up `voice-connection-continuity` adds bounded failure
+provenance and truthful interruption wording while retaining conservative
+unknown-outcome semantics. The owner clarified diagnosis first; prepared
+inactivity-removal work is not part of the diagnostic build.
+
+## Build 32 idle retest and owner decision
+
+Two later sessions ended through the inactivity path at 07:15:29 and 07:16:51
+UTC. Each retained `idle-stop-started`, native web Stop ownership acceptance,
+server close with `nativeStopAttempted=true`, `idle-stop-completed`, and return
+to Ready. Realtime-open exposure was 130,723 ms and 74,088 ms respectively.
+The owner perceived the latter shutdown after about 20 seconds and rejected
+continuity acceptance. The diagnostics establish the shutdown path but do not
+independently measure silence from the last audible response. Do not call the
+physical timing check successful or dismiss the owner's observation.
+
+The owner explicitly requested complete removal of the inactivity feature.
+Build 33 removes that timer and its hooks while preserving manual Stop, native
+safety/session limits and the new transport diagnostics. This does not establish
+the cause of the distinct build31 transport interruption. Physical continuity,
+manual Stop/restart, and the broader Phase 0 gate remain pending.

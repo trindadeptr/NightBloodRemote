@@ -1242,10 +1242,6 @@ final class DirectVoiceSessionModel {
                 print("NightBloodBackground event=\(kind) detail=\(detail)")
             }
             #endif
-            if ["idle-stop-started", "idle-stop-completed", "idle-stop-failed"].contains(kind) {
-                // Persist only the fixed event name, never arbitrary web detail.
-                NightBloodCarPlayDiagnostics.record("voice." + kind)
-            }
             if ["speech-started", "speech-stopped", "assistant-speaking", "assistant-done"].contains(kind) {
                 tracePerformance(kind)
             }

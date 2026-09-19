@@ -1268,22 +1268,37 @@ actor CodexRemoteVoiceTransport {
     private func readerLoop(
         using socket: any CodexRemoteWebSocketConnection
     ) async {
+        var failureOrigin = CodexRemoteVoiceFailureOrigin.readerReceive
         do {
             while !Task.isCancelled {
+                failureOrigin = .readerReceive
                 let frame = try await socket.receive()
+                failureOrigin = .readerFrame
                 try await handleRelayFrame(frame)
             }
         } catch {
             if !closing, !transportClosed {
-                await readerFailed(Self.voiceError(error), socket: socket)
+                await readerFailed(
+                    Self.voiceError(error),
+                    origin: failureOrigin,
+                    socket: socket
+                )
             }
         }
     }
 
     private func readerFailed(
         _ error: CodexRemoteVoiceError,
+        origin: CodexRemoteVoiceFailureOrigin,
         socket: any CodexRemoteWebSocketConnection
     ) async {
+        let diagnostic = CodexRemoteVoiceFailureDiagnostic(
+            origin: origin,
+            error: error,
+            serverStarted: serverStarted,
+            stopAttempted: stopAttempted,
+            realtimeClosed: realtimeClosed
+        )
         let usageSummaries = realtimeStartRequestBegan
             ? takeUsageDiagnostics(clean: false) : nil
         readerTask = nil
@@ -1314,7 +1329,9 @@ actor CodexRemoteVoiceTransport {
             failure = .operationOutcomeUnknown("Stopping Codex Voice")
         } else if realtimeStartRequestBegan, !realtimeClosed {
             state = .startOutcomeUnknown
-            failure = .operationOutcomeUnknown("Starting Codex Voice")
+            failure = serverStarted
+                ? .realtimeInterruptionOutcomeUnknown
+                : .operationOutcomeUnknown("Starting Codex Voice")
         } else {
             state = .failed
             failure = error
@@ -1325,6 +1342,10 @@ actor CodexRemoteVoiceTransport {
         finishObservers()
         await socket.close()
         await persistUsageDiagnostics(usageSummaries)
+        await NightBloodCarPlayDiagnostics.record(
+            "voice.transport.failure",
+            detail: diagnostic.detail
+        )
     }
 
     private func startHeartbeat() {
@@ -1335,6 +1356,7 @@ actor CodexRemoteVoiceTransport {
     }
 
     private func heartbeatLoop() async {
+        var failureOrigin = CodexRemoteVoiceFailureOrigin.heartbeatPongAge
         do {
             while !Task.isCancelled {
                 try await Task.sleep(
@@ -1365,10 +1387,13 @@ actor CodexRemoteVoiceTransport {
                       now().timeIntervalSince(lastPongAt)
                         < CodexRemoteVoiceConstants.pongTimeoutSeconds
                 else {
+                    failureOrigin = .heartbeatPongAge
                     throw CodexRemoteVoiceError.connectionFailed
                 }
+                failureOrigin = .heartbeatSend
                 try await sendPing()
                 if let processID = desktopProcessID {
+                    failureOrigin = .heartbeatHelperWrite
                     _ = try await request(.desktopCommandWrite, params: .object([
                         "processId": .string(processID),
                         "deltaBase64": .string(Data("ping\n".utf8).base64EncodedString()),
@@ -1380,6 +1405,21 @@ actor CodexRemoteVoiceTransport {
         } catch {
             heartbeatTask = nil
             let voiceError = Self.voiceError(error)
+            // Reader cleanup can fail an in-flight heartbeat waiter. Preserve
+            // the existing terminal handling, but do not mislabel that
+            // secondary wake-up as the primary failure boundary.
+            let shouldRecordDiagnostic = CodexRemoteVoiceFailureDiagnostic
+                .shouldRecordHeartbeatFailure(
+                    closing: closing,
+                    transportClosed: transportClosed
+                )
+            let diagnostic = CodexRemoteVoiceFailureDiagnostic(
+                origin: failureOrigin,
+                error: voiceError,
+                serverStarted: serverStarted,
+                stopAttempted: stopAttempted,
+                realtimeClosed: realtimeClosed
+            )
             if stopAttempted, !realtimeClosed {
                 state = .stopOutcomeUnknown
                 errorDescription = CodexRemoteVoiceError
@@ -1387,15 +1427,23 @@ actor CodexRemoteVoiceTransport {
                     .localizedDescription
             } else if realtimeStartRequestBegan, !realtimeClosed {
                 state = .startOutcomeUnknown
-                errorDescription = CodexRemoteVoiceError
-                    .operationOutcomeUnknown("Starting Codex Voice")
-                    .localizedDescription
+                errorDescription = (serverStarted
+                    ? CodexRemoteVoiceError.realtimeInterruptionOutcomeUnknown
+                    : CodexRemoteVoiceError.operationOutcomeUnknown(
+                        "Starting Codex Voice"
+                    )).localizedDescription
             } else {
                 state = .failed
                 errorDescription = voiceError.localizedDescription
             }
             publish()
             await closeTransport(preserveState: true)
+            if shouldRecordDiagnostic {
+                await NightBloodCarPlayDiagnostics.record(
+                    "voice.transport.failure",
+                    detail: diagnostic.detail
+                )
+            }
         }
     }
 
@@ -3140,6 +3188,7 @@ actor CodexRemoteVoiceTransport {
         preserveState: Bool,
         sendClientClosed: Bool = true
     ) async {
+        var localCloseDiagnostic: CodexRemoteVoiceFailureDiagnostic?
         let usageSummaries = realtimeStartRequestBegan && !realtimeClosed
             ? takeUsageDiagnostics(clean: false) : nil
         desktopReady = false
@@ -3220,14 +3269,32 @@ actor CodexRemoteVoiceTransport {
             if startAttempted, !realtimeClosed {
                 if stopAttempted {
                     state = .stopOutcomeUnknown
-                    errorDescription = CodexRemoteVoiceError
+                    let failure = CodexRemoteVoiceError
                         .operationOutcomeUnknown("Stopping Codex Voice")
-                        .localizedDescription
+                    errorDescription = failure.localizedDescription
+                    localCloseDiagnostic = CodexRemoteVoiceFailureDiagnostic(
+                        origin: .localClose,
+                        error: failure,
+                        serverStarted: serverStarted,
+                        stopAttempted: stopAttempted,
+                        realtimeClosed: realtimeClosed
+                    )
                 } else {
                     state = .startOutcomeUnknown
-                    errorDescription = CodexRemoteVoiceError
-                        .operationOutcomeUnknown("Starting Codex Voice")
-                        .localizedDescription
+                    let failure: CodexRemoteVoiceError = serverStarted
+                        ? CodexRemoteVoiceError
+                            .realtimeInterruptionOutcomeUnknown
+                        : CodexRemoteVoiceError.operationOutcomeUnknown(
+                            "Starting Codex Voice"
+                        )
+                    errorDescription = failure.localizedDescription
+                    localCloseDiagnostic = CodexRemoteVoiceFailureDiagnostic(
+                        origin: .localClose,
+                        error: failure,
+                        serverStarted: serverStarted,
+                        stopAttempted: stopAttempted,
+                        realtimeClosed: realtimeClosed
+                    )
                 }
             } else {
                 state = .closed
@@ -3245,6 +3312,12 @@ actor CodexRemoteVoiceTransport {
         publish()
         finishObservers()
         await persistUsageDiagnostics(usageSummaries)
+        if let localCloseDiagnostic {
+            await NightBloodCarPlayDiagnostics.record(
+                "voice.transport.failure",
+                detail: localCloseDiagnostic.detail
+            )
+        }
     }
 
     /// Connect may be suspended in native authentication or WebSocket
